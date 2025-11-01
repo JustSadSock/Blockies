@@ -30,6 +30,8 @@ const DEFAULT_KEYS = [
 let gameState = {
     players: [],
     numPlayers: 1,
+    board: [],
+    lastTime: 0,
     isPaused: false,
     isGameOver: false,
     settings: {
@@ -44,7 +46,6 @@ class Player {
         this.id = id;
         this.color = color;
         this.keys = keys;
-        this.board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
         this.score = 0;
         this.level = 1;
         this.lines = 0;
@@ -88,12 +89,13 @@ class Player {
                 if (piece[y][x]) {
                     const boardX = pos.x + x;
                     const boardY = pos.y + y;
-                    
+
                     if (boardX < 0 || boardX >= BOARD_WIDTH || boardY >= BOARD_HEIGHT) {
                         return true;
                     }
-                    
-                    if (boardY >= 0 && this.board[boardY][boardX]) {
+
+                    if (boardY >= 0 && (gameState.board[boardY][boardX] ||
+                        isCellOccupiedByOtherPiece(boardX, boardY, this.id))) {
                         return true;
                     }
                 }
@@ -149,7 +151,7 @@ class Player {
                     const boardY = this.position.y + y;
                     const boardX = this.position.x + x;
                     if (boardY >= 0) {
-                        this.board[boardY][boardX] = 1;
+                        gameState.board[boardY][boardX] = this.id + 1;
                     }
                 }
             }
@@ -158,11 +160,11 @@ class Player {
 
     clearLines() {
         let linesCleared = 0;
-        
+
         for (let y = BOARD_HEIGHT - 1; y >= 0; y--) {
-            if (this.board[y].every(cell => cell === 1)) {
-                this.board.splice(y, 1);
-                this.board.unshift(Array(BOARD_WIDTH).fill(0));
+            if (gameState.board[y].every(cell => cell !== 0)) {
+                gameState.board.splice(y, 1);
+                gameState.board.unshift(Array(BOARD_WIDTH).fill(0));
                 linesCleared++;
                 y++; // Check the same row again
             }
@@ -172,7 +174,9 @@ class Player {
             this.lines += linesCleared;
             this.score += [0, 100, 300, 500, 800][linesCleared] * this.level;
             this.level = Math.floor(this.lines / 10) + 1;
-            this.dropInterval = Math.max(100, 1000 - (this.level - 1) * 100);
+            gameState.players.forEach(player => {
+                player.dropInterval = Math.max(100, player.dropInterval * Math.pow(0.95, linesCleared));
+            });
         }
     }
 
@@ -184,6 +188,28 @@ class Player {
             this.drop();
         }
     }
+}
+
+function isCellOccupiedByOtherPiece(x, y, currentPlayerId) {
+    return gameState.players.some(player => {
+        if (player.id === currentPlayerId || player.gameOver || !player.currentPiece) {
+            return false;
+        }
+
+        for (let py = 0; py < player.currentPiece.length; py++) {
+            for (let px = 0; px < player.currentPiece[py].length; px++) {
+                if (!player.currentPiece[py][px]) continue;
+                const boardX = player.position.x + px;
+                const boardY = player.position.y + py;
+
+                if (boardX === x && boardY === y) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    });
 }
 
 // UI Manager
@@ -250,9 +276,23 @@ class UIManager {
         gameState.isPaused = false;
         gameState.isGameOver = false;
         gameState.players = [];
+        gameState.board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
+        gameState.lastTime = 0;
 
         const container = document.getElementById('game-container');
         container.innerHTML = '';
+
+        const boardWrapper = document.createElement('div');
+        boardWrapper.id = 'shared-board';
+
+        const canvas = document.createElement('canvas');
+        canvas.id = 'game-canvas';
+        canvas.width = BOARD_WIDTH * BLOCK_SIZE;
+        canvas.height = BOARD_HEIGHT * BLOCK_SIZE;
+        boardWrapper.appendChild(canvas);
+
+        const infoWrapper = document.createElement('div');
+        infoWrapper.id = 'players-info';
 
         for (let i = 0; i < numPlayers; i++) {
             const player = new Player(
@@ -263,17 +303,24 @@ class UIManager {
             player.init();
             gameState.players.push(player);
 
-            this.createPlayerBoard(player, container);
+            this.createPlayerInfo(player, infoWrapper);
+            this.updatePlayerInfo(player);
+            this.drawNextPiece(player);
         }
+
+        container.appendChild(boardWrapper);
+        container.appendChild(infoWrapper);
+
+        this.drawBoard();
 
         this.showScreen('gameScreen');
         requestAnimationFrame((time) => this.gameLoop(time));
     }
 
-    createPlayerBoard(player, container) {
-        const boardDiv = document.createElement('div');
-        boardDiv.className = 'player-board';
-        boardDiv.id = `player-${player.id}`;
+    createPlayerInfo(player, container) {
+        const playerCard = document.createElement('div');
+        playerCard.className = 'player-info-card';
+        playerCard.id = `player-${player.id}`;
 
         const header = document.createElement('div');
         header.className = 'player-header';
@@ -281,18 +328,13 @@ class UIManager {
         header.style.color = 'white';
         header.textContent = `Player ${player.id + 1}`;
 
-        const info = document.createElement('div');
-        info.className = 'player-info';
-        info.innerHTML = `
+        const stats = document.createElement('div');
+        stats.className = 'player-info';
+        stats.innerHTML = `
             <div class="score">Score: <span id="score-${player.id}">0</span></div>
             <div class="level">Level: <span id="level-${player.id}">1</span></div>
             <div class="lines">Lines: <span id="lines-${player.id}">0</span></div>
         `;
-
-        const canvas = document.createElement('canvas');
-        canvas.id = `canvas-${player.id}`;
-        canvas.width = BOARD_WIDTH * BLOCK_SIZE;
-        canvas.height = BOARD_HEIGHT * BLOCK_SIZE;
 
         const nextDiv = document.createElement('div');
         nextDiv.className = 'next-piece';
@@ -303,11 +345,10 @@ class UIManager {
         nextCanvas.height = PREVIEW_SIZE * BLOCK_SIZE;
         nextDiv.appendChild(nextCanvas);
 
-        boardDiv.appendChild(header);
-        boardDiv.appendChild(info);
-        boardDiv.appendChild(canvas);
-        boardDiv.appendChild(nextDiv);
-        container.appendChild(boardDiv);
+        playerCard.appendChild(header);
+        playerCard.appendChild(stats);
+        playerCard.appendChild(nextDiv);
+        container.appendChild(playerCard);
     }
 
     gameLoop(time) {
@@ -323,31 +364,34 @@ class UIManager {
             gameState.players.forEach(player => {
                 if (!player.gameOver) {
                     player.update(deltaTime);
-                    this.drawPlayer(player);
                     this.updatePlayerInfo(player);
+                    this.drawNextPiece(player);
                 }
             });
+
+            this.drawBoard();
         }
 
         requestAnimationFrame((time) => this.gameLoop(time));
     }
 
-    drawPlayer(player) {
-        const canvas = document.getElementById(`canvas-${player.id}`);
-        const ctx = canvas.getContext('2d');
+    drawBoard() {
+        const canvas = document.getElementById('game-canvas');
+        if (!canvas) return;
 
-        // Clear canvas
+        const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw board
         for (let y = 0; y < BOARD_HEIGHT; y++) {
             for (let x = 0; x < BOARD_WIDTH; x++) {
-                if (player.board[y][x]) {
-                    ctx.fillStyle = player.color;
+                const occupant = gameState.board[y][x];
+                if (occupant) {
+                    const player = gameState.players[occupant - 1];
+                    const color = player ? player.color : '#333';
+                    ctx.fillStyle = color;
                     ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
-                    
-                    // Add cute border effect
+
                     ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x * BLOCK_SIZE + 1, y * BLOCK_SIZE + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
@@ -355,8 +399,9 @@ class UIManager {
             }
         }
 
-        // Draw current piece
-        if (player.currentPiece) {
+        gameState.players.forEach(player => {
+            if (!player.currentPiece || player.gameOver) return;
+
             ctx.fillStyle = player.color;
             for (let y = 0; y < player.currentPiece.length; y++) {
                 for (let x = 0; x < player.currentPiece[y].length; x++) {
@@ -364,17 +409,20 @@ class UIManager {
                         const drawX = (player.position.x + x) * BLOCK_SIZE;
                         const drawY = (player.position.y + y) * BLOCK_SIZE;
                         ctx.fillRect(drawX, drawY, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
-                        
+
                         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                         ctx.lineWidth = 2;
                         ctx.strokeRect(drawX + 1, drawY + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
                     }
                 }
             }
-        }
+        });
+    }
 
-        // Draw next piece
+    drawNextPiece(player) {
         const nextCanvas = document.getElementById(`next-${player.id}`);
+        if (!nextCanvas) return;
+
         const nextCtx = nextCanvas.getContext('2d');
         nextCtx.fillStyle = '#fff';
         nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
@@ -390,7 +438,7 @@ class UIManager {
                         const drawX = (offsetX + x) * BLOCK_SIZE;
                         const drawY = (offsetY + y) * BLOCK_SIZE;
                         nextCtx.fillRect(drawX, drawY, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
-                        
+
                         nextCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                         nextCtx.lineWidth = 2;
                         nextCtx.strokeRect(drawX + 1, drawY + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
@@ -418,7 +466,7 @@ class UIManager {
             if (player.gameOver) return;
 
             const keys = player.keys;
-            
+
             if (e.key === keys.left) {
                 player.move(-1);
                 e.preventDefault();
@@ -436,6 +484,8 @@ class UIManager {
                 e.preventDefault();
             }
         });
+
+        this.drawBoard();
 
         if (e.key === 'Escape') {
             this.togglePause();
