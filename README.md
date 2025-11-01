@@ -18,7 +18,7 @@ A cute Tetris-like game with single-player and local multiplayer support (2-4 pl
    - **Player 1**: Arrow keys (↑ to rotate, ↓ to move down, ← → to move left/right, Space for hard drop)
    - **Player 2**: WASD (W to rotate, S to move down, A/D to move left/right, Q for hard drop)
    - **Player 3**: IJKL (I to rotate, K to move down, J/L to move left/right, U for hard drop)
-   - **Player 4**: Numpad (8 to rotate, 5 to move down, 4/6 to move left/right, 0 for hard drop)
+   - **Player 4**: TFGH (T to rotate, G to move down, F/H to move left/right, R for hard drop)
 
 ## Controls
 

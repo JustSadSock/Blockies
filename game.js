@@ -23,7 +23,7 @@ const DEFAULT_KEYS = [
     { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown', rotate: 'ArrowUp', drop: ' ' },
     { left: 'a', right: 'd', down: 's', rotate: 'w', drop: 'q' },
     { left: 'j', right: 'l', down: 'k', rotate: 'i', drop: 'u' },
-    { left: 'Numpad4', right: 'Numpad6', down: 'Numpad5', rotate: 'Numpad8', drop: 'Numpad0' }
+    { left: 'f', right: 'h', down: 'g', rotate: 't', drop: 'r' }
 ];
 
 // Game State
@@ -131,8 +131,10 @@ class Player {
     }
 
     hardDrop() {
-        while (!this.collides()) {
+        let maxDrops = BOARD_HEIGHT; // Safety limit
+        while (!this.collides() && maxDrops > 0) {
             this.position.y++;
+            maxDrops--;
         }
         this.position.y--;
         this.merge();
