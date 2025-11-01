@@ -294,6 +294,9 @@ class UIManager {
         const infoWrapper = document.createElement('div');
         infoWrapper.id = 'players-info';
 
+        container.appendChild(boardWrapper);
+        container.appendChild(infoWrapper);
+
         for (let i = 0; i < numPlayers; i++) {
             const player = new Player(
                 i,
@@ -308,8 +311,6 @@ class UIManager {
             this.drawNextPiece(player);
         }
 
-        container.appendChild(boardWrapper);
-        container.appendChild(infoWrapper);
 
         this.drawBoard();
 
@@ -449,9 +450,17 @@ class UIManager {
     }
 
     updatePlayerInfo(player) {
-        document.getElementById(`score-${player.id}`).textContent = player.score;
-        document.getElementById(`level-${player.id}`).textContent = player.level;
-        document.getElementById(`lines-${player.id}`).textContent = player.lines;
+        const scoreEl = document.getElementById(`score-${player.id}`);
+        const levelEl = document.getElementById(`level-${player.id}`);
+        const linesEl = document.getElementById(`lines-${player.id}`);
+
+        if (!scoreEl || !levelEl || !linesEl) {
+            return;
+        }
+
+        scoreEl.textContent = player.score;
+        levelEl.textContent = player.level;
+        linesEl.textContent = player.lines;
     }
 
     handleKeyPress(e) {
