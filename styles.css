@@ -111,6 +111,44 @@ h2 {
     overflow: hidden;
 }
 
+.team-stats {
+    display: none;
+    width: 100%;
+    background: rgba(102, 126, 234, 0.08);
+    border-radius: 18px;
+    padding: 12px 16px;
+    gap: 12px;
+    justify-content: center;
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+
+.team-stats.visible {
+    display: flex;
+}
+
+.team-stat {
+    flex: 1 1 160px;
+    background: white;
+    border-radius: 14px;
+    padding: 10px 14px;
+    text-align: center;
+    box-shadow: inset 0 0 0 2px rgba(102, 126, 234, 0.15);
+}
+
+.team-label {
+    display: block;
+    font-weight: 600;
+    color: #667eea;
+    margin-bottom: 4px;
+}
+
+.team-value {
+    font-size: 1.4em;
+    font-weight: 700;
+    color: #333;
+}
+
 /* Main Menu */
 .game-info {
     text-align: center;
@@ -165,6 +203,9 @@ h2 {
     flex: 1 1 420px;
     display: flex;
     justify-content: center;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 10px;
 }
 
 #players-info {
@@ -213,6 +254,9 @@ canvas {
     border-radius: 10px;
     display: block;
     background: #fff;
+    max-width: 100%;
+    height: auto;
+    image-rendering: pixelated;
 }
 
 .next-piece {
@@ -347,6 +391,11 @@ canvas {
     font-weight: bold;
 }
 
+.player-score.team-total {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     h1 {
@@ -384,6 +433,10 @@ canvas {
         gap: 10px;
         flex-direction: column;
         align-items: center;
+    }
+
+    .team-stat {
+        flex: 1 1 120px;
     }
 
     #players-info {
@@ -440,6 +493,10 @@ canvas {
 
     .game-controls .btn {
         width: 100%;
+    }
+
+    .team-stats {
+        padding: 10px 12px;
     }
 }
 
