@@ -42,7 +42,7 @@ let gameState = {
 
 // Player Class
 class Player {
-    constructor(id, color, keys) {
+    constructor(id, color, keys, spawnAnchor) {
         this.id = id;
         this.color = color;
         this.keys = keys;
@@ -56,6 +56,7 @@ class Player {
         this.dropCounter = 0;
         this.dropInterval = 1000;
         this.lastTime = 0;
+        this.spawnAnchor = typeof spawnAnchor === 'number' ? spawnAnchor : BOARD_WIDTH / 2;
     }
 
     init() {
@@ -72,15 +73,48 @@ class Player {
     spawnPiece() {
         this.currentPiece = this.nextPiece;
         this.nextPiece = this.randomPiece();
-        this.position = {
-            x: Math.floor(BOARD_WIDTH / 2) - Math.floor(this.currentPiece[0].length / 2),
-            y: 0
-        };
+        const pieceWidth = this.currentPiece[0].length;
+        const preferredX = Math.min(
+            BOARD_WIDTH - pieceWidth,
+            Math.max(0, Math.round(this.spawnAnchor - pieceWidth / 2))
+        );
 
-        if (this.collides()) {
-            this.gameOver = true;
-            gameState.isGameOver = true;
+        let spawnPosition = null;
+        const checked = new Set();
+
+        for (let offset = 0; offset < BOARD_WIDTH; offset++) {
+            const candidates = [];
+            if (offset === 0) {
+                candidates.push(preferredX);
+            } else {
+                const left = preferredX - offset;
+                const right = preferredX + offset;
+
+                if (left >= 0) candidates.push(left);
+                if (right <= BOARD_WIDTH - pieceWidth) candidates.push(right);
+            }
+
+            for (const candidate of candidates) {
+                if (checked.has(candidate)) continue;
+                checked.add(candidate);
+
+                if (!this.collides(this.currentPiece, { x: candidate, y: 0 })) {
+                    spawnPosition = { x: candidate, y: 0 };
+                    break;
+                }
+            }
+
+            if (spawnPosition) break;
         }
+
+        this.position = spawnPosition || { x: preferredX, y: 0 };
+
+        if (!spawnPosition && this.collides()) {
+            this.gameOver = true;
+            checkAllPlayersGameOver();
+        }
+
+        this.dropCounter = 0;
     }
 
     collides(piece = this.currentPiece, pos = this.position) {
@@ -212,6 +246,14 @@ function isCellOccupiedByOtherPiece(x, y, currentPlayerId) {
     });
 }
 
+function checkAllPlayersGameOver() {
+    if (!gameState.players.length) return;
+
+    if (gameState.players.every(player => player.gameOver)) {
+        gameState.isGameOver = true;
+    }
+}
+
 // UI Manager
 class UIManager {
     constructor() {
@@ -226,7 +268,12 @@ class UIManager {
             gameOver: document.getElementById('gameover-menu')
         };
 
+        this.touchControls = document.getElementById('touch-controls');
+        this.touchStatus = document.getElementById('touch-status');
+        this.touchPlayerIndex = 0;
+
         this.setupEventListeners();
+        this.initTouchControls();
     }
 
     setupEventListeners() {
@@ -258,9 +305,133 @@ class UIManager {
         document.addEventListener('keydown', (e) => this.handleKeyPress(e));
     }
 
+    initTouchControls() {
+        if (!this.touchControls) return;
+
+        const buttons = this.touchControls.querySelectorAll('[data-action]');
+        buttons.forEach(button => {
+            const action = button.dataset.action;
+            if (!action) return;
+
+            const handler = (event) => {
+                event.preventDefault();
+                this.handleTouchAction(action);
+            };
+
+            if (window.PointerEvent) {
+                button.addEventListener('pointerdown', handler);
+            } else {
+                button.addEventListener('touchstart', handler, { passive: false });
+                button.addEventListener('mousedown', handler);
+            }
+
+            button.addEventListener('click', (event) => {
+                if (event.detail === 0) {
+                    handler(event);
+                }
+            });
+            button.addEventListener('contextmenu', (event) => event.preventDefault());
+        });
+
+        if (this.touchStatus) {
+            this.touchStatus.textContent = 'Start a game to use touch controls';
+        }
+    }
+
+    refreshTouchStatus() {
+        if (!this.touchControls || !this.touchStatus) return;
+
+        const activePlayer = this.getTouchPlayer();
+        if (activePlayer && !gameState.isGameOver) {
+            this.touchStatus.textContent = `Touch controls: Player ${activePlayer.id + 1}`;
+        } else if (gameState.players.length && gameState.players.every(player => player.gameOver)) {
+            this.touchStatus.textContent = 'All players have finished';
+        } else {
+            this.touchStatus.textContent = 'Start a game to use touch controls';
+        }
+    }
+
+    getTouchPlayer() {
+        if (!gameState.players.length) {
+            return null;
+        }
+
+        const current = gameState.players[this.touchPlayerIndex];
+        if (current && !current.gameOver) {
+            return current;
+        }
+
+        const fallback = gameState.players.find(player => !player.gameOver);
+        if (fallback) {
+            this.touchPlayerIndex = fallback.id;
+            return fallback;
+        }
+
+        return null;
+    }
+
+    handleTouchAction(action) {
+        if (gameState.isPaused || gameState.isGameOver) {
+            return;
+        }
+
+        const player = this.getTouchPlayer();
+        if (!player) {
+            this.refreshTouchStatus();
+            return;
+        }
+
+        let requiresInfoUpdate = false;
+
+        switch (action) {
+            case 'left':
+                player.move(-1);
+                break;
+            case 'right':
+                player.move(1);
+                break;
+            case 'down':
+                player.drop();
+                requiresInfoUpdate = true;
+                break;
+            case 'rotate':
+                player.rotate();
+                break;
+            case 'drop':
+                player.hardDrop();
+                requiresInfoUpdate = true;
+                break;
+            default:
+                break;
+        }
+
+        if (requiresInfoUpdate) {
+            this.updatePlayerInfo(player);
+            this.drawNextPiece(player);
+        }
+
+        this.drawBoard();
+
+        if (player.gameOver) {
+            this.refreshTouchStatus();
+        }
+    }
+
     showScreen(screenName) {
         Object.values(this.screens).forEach(screen => screen.classList.remove('active'));
         this.screens[screenName].classList.add('active');
+
+        if (this.touchControls) {
+            if (screenName === 'gameScreen') {
+                this.touchControls.classList.add('visible');
+                this.refreshTouchStatus();
+            } else {
+                this.touchControls.classList.remove('visible');
+                if (this.touchStatus) {
+                    this.touchStatus.textContent = 'Start a game to use touch controls';
+                }
+            }
+        }
     }
 
     showModal(modalName) {
@@ -278,6 +449,7 @@ class UIManager {
         gameState.players = [];
         gameState.board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
         gameState.lastTime = 0;
+        this.touchPlayerIndex = 0;
 
         const container = document.getElementById('game-container');
         container.innerHTML = '';
@@ -298,10 +470,12 @@ class UIManager {
         container.appendChild(infoWrapper);
 
         for (let i = 0; i < numPlayers; i++) {
+            const spawnAnchor = ((i + 1) / (numPlayers + 1)) * BOARD_WIDTH;
             const player = new Player(
                 i,
                 gameState.settings.colors[i],
-                gameState.settings.keys[i]
+                gameState.settings.keys[i],
+                spawnAnchor
             );
             player.init();
             gameState.players.push(player);
@@ -315,6 +489,7 @@ class UIManager {
         this.drawBoard();
 
         this.showScreen('gameScreen');
+        this.refreshTouchStatus();
         requestAnimationFrame((time) => this.gameLoop(time));
     }
 
@@ -354,6 +529,7 @@ class UIManager {
 
     gameLoop(time) {
         if (gameState.isGameOver) {
+            this.refreshTouchStatus();
             this.showGameOver();
             return;
         }
@@ -362,15 +538,26 @@ class UIManager {
             const deltaTime = time - (gameState.lastTime || time);
             gameState.lastTime = time;
 
+            let touchStatusNeedsUpdate = false;
             gameState.players.forEach(player => {
+                const wasGameOver = player.gameOver;
+
                 if (!player.gameOver) {
                     player.update(deltaTime);
                     this.updatePlayerInfo(player);
                     this.drawNextPiece(player);
                 }
+
+                if (!wasGameOver && player.gameOver) {
+                    touchStatusNeedsUpdate = true;
+                }
             });
 
             this.drawBoard();
+
+            if (touchStatusNeedsUpdate) {
+                this.refreshTouchStatus();
+            }
         }
 
         requestAnimationFrame((time) => this.gameLoop(time));
@@ -523,8 +710,11 @@ class UIManager {
     quitToMenu() {
         this.hideModal('pause');
         this.hideModal('gameOver');
-        gameState.isGameOver = true;
+        gameState.isPaused = false;
+        gameState.isGameOver = false;
+        gameState.players = [];
         this.showScreen('mainMenu');
+        this.refreshTouchStatus();
     }
 
     showGameOver() {
