@@ -8,7 +8,10 @@
     --panel-surface: rgba(245, 240, 255, 0.92);
     --panel-elevated: rgba(255, 250, 245, 0.95);
     --text-primary: #1a0f2e;
+    --text-secondary: #3d2a5e;
     --text-muted: #6b5b8c;
+    --text-light: #ffffff;
+    --text-on-light: #2d1545;
     --accent: #ff6b9d;
     --accent-strong: #c471ed;
     --accent-soft: rgba(255, 107, 157, 0.18);
@@ -286,7 +289,7 @@ header h1 span {
 #main-menu p {
     font-size: 0.9rem;
     line-height: 1.5;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-weight: 500;
     max-width: 700px;
     margin: 0 auto;
@@ -298,7 +301,7 @@ header h1 span {
     flex-wrap: wrap;
     justify-content: center;
     gap: 8px;
-    color: var(--accent-strong);
+    color: #8b4db8;
     font-weight: 700;
     font-size: 0.75rem;
     margin: 4px 0;

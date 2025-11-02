@@ -354,6 +354,42 @@ const SHAPES = {
 // Default colors for players - Retro-futurism palette
 const DEFAULT_COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
 
+// Minimum brightness threshold for player colors (0-255)
+const MIN_COLOR_BRIGHTNESS = 80;
+
+// Color validation helper function
+function getColorBrightness(hexColor) {
+    // Convert hex to RGB
+    const hex = hexColor.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    
+    // Calculate perceived brightness (ITU-R BT.709)
+    return (r * 0.2126 + g * 0.7152 + b * 0.0722);
+}
+
+function isColorTooDark(hexColor) {
+    return getColorBrightness(hexColor) < MIN_COLOR_BRIGHTNESS;
+}
+
+function suggestBrighterColor(hexColor) {
+    const hex = hexColor.replace('#', '');
+    let r = parseInt(hex.substr(0, 2), 16);
+    let g = parseInt(hex.substr(2, 2), 16);
+    let b = parseInt(hex.substr(4, 2), 16);
+    
+    // Increase brightness while maintaining hue
+    const currentBrightness = getColorBrightness(hexColor);
+    const factor = MIN_COLOR_BRIGHTNESS / currentBrightness;
+    
+    r = Math.min(255, Math.floor(r * factor * 1.5));
+    g = Math.min(255, Math.floor(g * factor * 1.5));
+    b = Math.min(255, Math.floor(b * factor * 1.5));
+    
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
 // Default key bindings for players (keyboard layout agnostic using code values)
 const DEFAULT_KEYS = [
     { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown', rotate: 'ArrowUp', drop: 'Space' },
@@ -2181,9 +2217,30 @@ class UIManager {
             const colorInput = document.getElementById(`coop-color-${i}`);
             if (colorInput) {
                 colorInput.addEventListener('change', (e) => {
-                    gameState.settings.colors[i] = e.target.value;
-                    const badge = card.querySelector('.player-color-badge');
-                    if (badge) badge.style.background = e.target.value;
+                    const selectedColor = e.target.value;
+                    
+                    // Check if color is too dark
+                    if (isColorTooDark(selectedColor)) {
+                        const brighterColor = suggestBrighterColor(selectedColor);
+                        const confirmMsg = currentLanguage === 'ru' 
+                            ? `Выбранный цвет слишком тёмный и может быть плохо виден на игровом поле. Использовать более яркий цвет вместо этого?`
+                            : `The selected color is too dark and may be hard to see on the game board. Use a brighter color instead?`;
+                        
+                        if (confirm(confirmMsg)) {
+                            e.target.value = brighterColor;
+                            gameState.settings.colors[i] = brighterColor;
+                            const badge = card.querySelector('.player-color-badge');
+                            if (badge) badge.style.background = brighterColor;
+                        } else {
+                            gameState.settings.colors[i] = selectedColor;
+                            const badge = card.querySelector('.player-color-badge');
+                            if (badge) badge.style.background = selectedColor;
+                        }
+                    } else {
+                        gameState.settings.colors[i] = selectedColor;
+                        const badge = card.querySelector('.player-color-badge');
+                        if (badge) badge.style.background = selectedColor;
+                    }
                 });
             }
         }
@@ -2719,6 +2776,24 @@ class UIManager {
             const colorInput = document.getElementById(`color-${i}`);
             if (colorInput) {
                 newColors[i] = colorInput.value;
+            }
+        }
+        
+        // Check for dark colors and warn user
+        const darkColorWarnings = [];
+        for (let i = 0; i < numPlayersToSave; i++) {
+            if (newColors[i] && isColorTooDark(newColors[i])) {
+                darkColorWarnings.push(`${t('player')} ${i + 1}`);
+            }
+        }
+        
+        if (darkColorWarnings.length > 0) {
+            const warningMsg = currentLanguage === 'ru'
+                ? `Следующие игроки используют слишком тёмные цвета, которые могут быть плохо видны: ${darkColorWarnings.join(', ')}. Продолжить?`
+                : `The following players are using very dark colors that may be hard to see: ${darkColorWarnings.join(', ')}. Continue anyway?`;
+            
+            if (!confirm(warningMsg)) {
+                return;
             }
         }
 
