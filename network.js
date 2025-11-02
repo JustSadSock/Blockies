@@ -202,8 +202,25 @@ class NetworkManager {
     }
 
     on(event, callback) {
-        if (this.callbacks.hasOwnProperty('on' + event.charAt(0).toUpperCase() + event.slice(1))) {
-            this.callbacks['on' + event.charAt(0).toUpperCase() + event.slice(1)] = callback;
+        const validEvents = {
+            'connect': 'onConnect',
+            'disconnect': 'onDisconnect',
+            'roomsList': 'onRoomsList',
+            'roomCreated': 'onRoomCreated',
+            'roomJoined': 'onRoomJoined',
+            'roomUpdate': 'onRoomUpdate',
+            'leftRoom': 'onLeftRoom',
+            'gameStart': 'onGameStart',
+            'gameState': 'onGameState',
+            'playerInput': 'onPlayerInput',
+            'error': 'onError'
+        };
+        
+        const callbackName = validEvents[event];
+        if (callbackName && this.callbacks.hasOwnProperty(callbackName)) {
+            this.callbacks[callbackName] = callback;
+        } else {
+            console.warn(`Unknown event type: ${event}`);
         }
     }
 }

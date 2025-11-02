@@ -240,7 +240,7 @@ io.on('connection', (socket) => {
                     io.to(player.roomId).emit('room-update', room.getFullInfo());
                     
                     // Check if all players are ready
-                    if (room.allPlayersReady() && room.players.length >= 1) {
+                    if (room.allPlayersReady() && room.players.length >= 2) {
                         room.gameStarted = true;
                         io.to(player.roomId).emit('game-start', {
                             players: room.players

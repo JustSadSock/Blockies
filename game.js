@@ -2115,7 +2115,10 @@ class UIManager {
         
         this.startGame(numPlayers);
         
-        // TODO: Implement online game synchronization
+        // Note: Full online game synchronization (real-time piece movement, board state sync) 
+        // is not implemented in this version. The game currently supports room management,
+        // player setup, and basic multiplayer session initialization. Future enhancements
+        // should add real-time game state synchronization for networked gameplay.
         console.log('Online game started with players:', data.players);
     }
 
