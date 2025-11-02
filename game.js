@@ -9,6 +9,75 @@ const BASE_LINE_SCORE = 100;
 const STREAK_BONUS_STEP = 0.1;
 const MULTI_LINE_BONUS_STEP = 0.2;
 
+// Sound Manager - simple Web Audio API sounds
+class SoundManager {
+    constructor() {
+        this.audioContext = null;
+        this.enabled = true;
+        this.initAudio();
+    }
+
+    initAudio() {
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.log('Web Audio API not supported');
+            this.enabled = false;
+        }
+    }
+
+    playTone(frequency, duration, volume = 0.1) {
+        if (!this.enabled || !this.audioContext) return;
+
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+
+        oscillator.frequency.value = frequency;
+        oscillator.type = 'square';
+
+        gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+
+        oscillator.start(this.audioContext.currentTime);
+        oscillator.stop(this.audioContext.currentTime + duration);
+    }
+
+    move() {
+        this.playTone(200, 0.05, 0.05);
+    }
+
+    rotate() {
+        this.playTone(300, 0.08, 0.06);
+    }
+
+    drop() {
+        this.playTone(150, 0.1, 0.08);
+    }
+
+    lineClear(count) {
+        const baseFreq = 400;
+        for (let i = 0; i < count; i++) {
+            setTimeout(() => {
+                this.playTone(baseFreq + i * 100, 0.15, 0.1);
+            }, i * 50);
+        }
+    }
+
+    gameOver() {
+        const frequencies = [300, 250, 200, 150];
+        frequencies.forEach((freq, i) => {
+            setTimeout(() => {
+                this.playTone(freq, 0.2, 0.08);
+            }, i * 100);
+        });
+    }
+}
+
+const soundManager = new SoundManager();
+
 // Tetromino shapes
 const SHAPES = {
     I: [[1, 1, 1, 1]],
@@ -76,7 +145,7 @@ let gameState = {
 };
 
 // Gamepad configuration
-const GAMEPAD_DEADZONE = 0.3;
+const GAMEPAD_DEADZONE = 0.5; // Increased deadzone to reduce sensitivity
 const GAMEPAD_BUTTON_MAP = {
     left: [14], // D-pad left
     right: [15], // D-pad right
@@ -314,6 +383,8 @@ class Player {
         this.position.x += dir;
         if (this.checkCollision().collides) {
             this.position.x -= dir;
+        } else {
+            soundManager.move();
         }
     }
 
@@ -324,6 +395,7 @@ class Player {
 
         if (!this.checkCollision(rotated).collides) {
             this.currentPiece = rotated;
+            soundManager.rotate();
         }
     }
 
@@ -334,6 +406,7 @@ class Player {
             this.position.y--;
             if (collision.withLocked) {
                 this.merge();
+                soundManager.drop();
                 this.clearLines();
                 this.spawnPiece();
             }
@@ -364,6 +437,7 @@ class Player {
 
         if (landedOnLocked) {
             this.merge();
+            soundManager.drop();
             this.clearLines();
             this.spawnPiece();
         }
@@ -405,6 +479,9 @@ class Player {
             gameState.sharedStats.lastClearDetail = null;
             return;
         }
+
+        // Play line clear sound
+        soundManager.lineClear(linesCleared);
 
         const comboStep = gameState.sharedStats.comboChain || 0;
         const comboMultiplier = 1 + STREAK_BONUS_STEP * comboStep;
@@ -482,6 +559,7 @@ function checkAllPlayersGameOver() {
 
     if (gameState.players.every(player => player.gameOver)) {
         gameState.isGameOver = true;
+        soundManager.gameOver();
     }
 }
 
@@ -579,7 +657,7 @@ class UIManager {
             }
             const buttonState = gameState.gamepads.buttonStates.get(i);
             
-            // Check buttons for each action
+            // Check D-pad buttons for each action
             for (const action in GAMEPAD_BUTTON_MAP) {
                 const buttons = GAMEPAD_BUTTON_MAP[action];
                 const pressed = buttons.some(btnIndex => gamepad.buttons[btnIndex]?.pressed);
@@ -587,37 +665,12 @@ class UIManager {
                 const wasPressed = buttonState[action].wasPressed;
                 buttonState[action].pressed = pressed;
                 
-                // Trigger on button press (not held)
+                // Trigger on button press (not held) - similar to keyboard behavior
                 if (pressed && !wasPressed) {
                     this.handleGamepadAction(player, action);
                 }
                 
                 buttonState[action].wasPressed = pressed;
-            }
-            
-            // Check D-pad axes (some controllers use axes instead of buttons)
-            const axisX = gamepad.axes[0] || 0;
-            const axisY = gamepad.axes[1] || 0;
-            
-            if (axisX < -GAMEPAD_DEADZONE && !buttonState.left.wasPressed) {
-                this.handleGamepadAction(player, 'left');
-                buttonState.left.wasPressed = true;
-            } else if (axisX > -GAMEPAD_DEADZONE) {
-                buttonState.left.wasPressed = false;
-            }
-            
-            if (axisX > GAMEPAD_DEADZONE && !buttonState.right.wasPressed) {
-                this.handleGamepadAction(player, 'right');
-                buttonState.right.wasPressed = true;
-            } else if (axisX < GAMEPAD_DEADZONE) {
-                buttonState.right.wasPressed = false;
-            }
-            
-            if (axisY > GAMEPAD_DEADZONE && !buttonState.down.wasPressed) {
-                this.handleGamepadAction(player, 'down');
-                buttonState.down.wasPressed = true;
-            } else if (axisY < GAMEPAD_DEADZONE) {
-                buttonState.down.wasPressed = false;
             }
         }
     }
@@ -1664,7 +1717,10 @@ class UIManager {
         const container = document.getElementById('settings-container');
         container.innerHTML = '';
 
-        for (let i = 0; i < 4; i++) {
+        // Only show settings for the current number of players, or all 4 if no game is active
+        const numPlayersToShow = gameState.numPlayers > 0 ? gameState.numPlayers : 4;
+
+        for (let i = 0; i < numPlayersToShow; i++) {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'player-settings';
             
@@ -1682,12 +1738,12 @@ class UIManager {
             `;
             playerDiv.appendChild(colorDiv);
 
-            // Key bindings
+            // Key bindings - in a more compact grid
             const keysDiv = document.createElement('div');
             keysDiv.className = 'key-bindings';
             
             const actions = ['left', 'right', 'down', 'rotate', 'drop'];
-            const labels = ['Move Left', 'Move Right', 'Move Down', 'Rotate', 'Hard Drop'];
+            const labels = ['Left', 'Right', 'Down', 'Rotate', 'Drop'];
             
             actions.forEach((action, idx) => {
                 const bindingDiv = document.createElement('div');
@@ -1714,7 +1770,7 @@ class UIManager {
             gamepadDiv.innerHTML = `
                 <label>Gamepad:</label>
                 <select id="gamepad-${i}" class="gamepad-select">
-                    <option value="">None (Keyboard only)</option>
+                    <option value="">Keyboard</option>
                 </select>
             `;
             playerDiv.appendChild(gamepadDiv);
@@ -1726,7 +1782,7 @@ class UIManager {
         scanGamepads();
         const gamepads = gameState.gamepads.connected;
         
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < numPlayersToShow; i++) {
             const select = document.getElementById(`gamepad-${i}`);
             if (!select) continue;
             
@@ -1734,7 +1790,7 @@ class UIManager {
             gamepads.forEach(gp => {
                 const option = document.createElement('option');
                 option.value = gp.index;
-                option.textContent = `Gamepad ${gp.index + 1}: ${gp.id.substring(0, 30)}...`;
+                option.textContent = `Gamepad ${gp.index + 1}`;
                 
                 // Check if this gamepad is already assigned to this player
                 if (gameState.gamepads.assignments[gp.index] === i) {
@@ -1768,14 +1824,18 @@ class UIManager {
     }
 
     saveSettings() {
+        const numPlayersToSave = gameState.numPlayers > 0 ? gameState.numPlayers : 4;
+
         // Save colors
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < numPlayersToSave; i++) {
             const colorInput = document.getElementById(`color-${i}`);
-            gameState.settings.colors[i] = colorInput.value;
+            if (colorInput) {
+                gameState.settings.colors[i] = colorInput.value;
+            }
         }
 
         // Save key bindings
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < numPlayersToSave; i++) {
             const actions = ['left', 'right', 'down', 'rotate', 'drop'];
             actions.forEach(action => {
                 const keyInput = document.getElementById(`key-${i}-${action}`);
@@ -1790,7 +1850,7 @@ class UIManager {
         
         // Save gamepad assignments
         gameState.gamepads.assignments = {};
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < numPlayersToSave; i++) {
             const select = document.getElementById(`gamepad-${i}`);
             if (select && select.value !== '') {
                 const gamepadIndex = parseInt(select.value);
