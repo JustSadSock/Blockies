@@ -74,7 +74,10 @@ const TRANSLATIONS = {
         right: "Right",
         down: "Down",
         rotate: "Rotate",
-        drop: "Drop"
+        drop: "Drop",
+        
+        // Generic
+        player: "Player"
     },
     ru: {
         // Main Menu
@@ -150,7 +153,10 @@ const TRANSLATIONS = {
         right: "Вправо",
         down: "Вниз",
         rotate: "Повернуть",
-        drop: "Сбросить"
+        drop: "Сбросить",
+        
+        // Generic
+        player: "Игрок"
     }
 };
 
@@ -2534,7 +2540,7 @@ class UIManager {
             playerDiv.className = 'player-settings';
             
             const title = document.createElement('h3');
-            title.textContent = `${t('singlePlayer').replace('Single Player', 'Player')} ${i + 1}`;
+            title.textContent = `${t('player')} ${i + 1}`;
             playerDiv.appendChild(title);
 
             // Color picker
@@ -2760,7 +2766,7 @@ class UIManager {
         localStorage.setItem('blockies-gamepad-assignments', JSON.stringify(gameState.gamepads.assignments));
 
         // Show success message
-        this.showStyledMessage('Settings Saved', 'Your settings have been saved successfully!', 'success');
+        this.showStyledMessage(t('settingsSaved'), t('settingsSavedMsg'), 'success');
 
         // Return to previous screen after a short delay
         setTimeout(() => {
