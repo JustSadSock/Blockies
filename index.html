@@ -3,13 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blockies - Cute Tetris Game</title>
+    <title>Blockies - Team Puzzle Arcade</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎮 Blockies 🎮</h1>
+            <h1><span>Blockies</span> Arcade</h1>
             <div class="menu-buttons">
                 <button id="single-player-btn" class="btn btn-primary">Single Player</button>
                 <button id="multiplayer-btn" class="btn btn-primary">Multiplayer</button>
@@ -21,7 +24,12 @@
         <div id="main-menu" class="screen active">
             <div class="game-info">
                 <h2>Welcome to Blockies!</h2>
-                <p>A cute Tetris-like game with multiplayer support</p>
+                <p>Gather your friends and stack vibrant neon blocks on a single shared board. Smooth animations, fair controls, and a unified score keep the entire team in the spotlight.</p>
+                <ul class="feature-list">
+                    <li>Shared arena multiplayer</li>
+                    <li>Touch & keyboard friendly</li>
+                    <li>Combo-driven scoring</li>
+                </ul>
                 <div class="mode-selection">
                     <button id="mode-1p" class="mode-btn">1 Player</button>
                     <button id="mode-2p" class="mode-btn">2 Players</button>
