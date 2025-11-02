@@ -2,19 +2,22 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Blockies - Team Puzzle Arcade</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
             <h1><span>Blockies</span> Arcade</h1>
             <div class="menu-buttons">
-                <button id="settings-btn" class="btn btn-secondary">Settings</button>
+                <button id="pause-btn" class="btn btn-secondary" style="display: none;">⏸ Pause</button>
+                <button id="quit-btn" class="btn btn-secondary" style="display: none;">🏠 Menu</button>
+                <button id="settings-btn" class="btn btn-secondary">⚙ Settings</button>
                 <div id="gamepad-status" class="gamepad-status"></div>
             </div>
         </header>
@@ -23,19 +26,92 @@
         <div id="main-menu" class="screen active">
             <div class="game-info">
                 <h2>Welcome to Blockies!</h2>
-                <p>Gather your friends and stack vibrant neon blocks on a single shared board. Smooth animations, fair controls, and a unified score keep the entire team in the spotlight.</p>
+                <p>Stack vibrant neon blocks in this modern take on the classic puzzle game. Play solo or team up with friends!</p>
                 <ul class="feature-list">
-                    <li>Shared arena multiplayer</li>
-                    <li>Touch & keyboard friendly</li>
-                    <li>Combo-driven scoring</li>
+                    <li>🎮 Multiple Game Modes</li>
+                    <li>👥 Local & Online Multiplayer</li>
+                    <li>⚡ Fast-Paced Action</li>
                 </ul>
                 <div class="mode-selection">
-                    <button id="mode-1p" class="mode-btn">1 Player</button>
-                    <button id="mode-2p" class="mode-btn">2 Players</button>
-                    <button id="mode-3p" class="mode-btn">3 Players</button>
-                    <button id="mode-4p" class="mode-btn">4 Players</button>
+                    <button id="mode-single" class="mode-btn mode-btn-primary">
+                        <span class="mode-icon">🎯</span>
+                        <span class="mode-title">Single Player</span>
+                        <span class="mode-desc">Play solo</span>
+                    </button>
+                    <button id="mode-local" class="mode-btn mode-btn-success">
+                        <span class="mode-icon">👥</span>
+                        <span class="mode-title">Local Co-op</span>
+                        <span class="mode-desc">Play together</span>
+                    </button>
+                    <button id="mode-online" class="mode-btn mode-btn-info">
+                        <span class="mode-icon">🌐</span>
+                        <span class="mode-title">Online</span>
+                        <span class="mode-desc">Play over network</span>
+                    </button>
                 </div>
             </div>
+        </div>
+
+        <!-- Local Co-op Setup Screen -->
+        <div id="coop-setup-screen" class="screen">
+            <h2>🎮 Local Co-op Setup</h2>
+            <div class="coop-setup-container">
+                <div class="player-count-section">
+                    <h3>Number of Players</h3>
+                    <div class="player-count-selector">
+                        <button class="player-count-btn active" data-count="1">1</button>
+                        <button class="player-count-btn" data-count="2">2</button>
+                        <button class="player-count-btn" data-count="3">3</button>
+                        <button class="player-count-btn" data-count="4">4</button>
+                    </div>
+                </div>
+                <div id="coop-players-config" class="coop-players-config">
+                    <!-- Player configurations will be dynamically added here -->
+                </div>
+                <div class="coop-setup-actions">
+                    <button id="start-coop-btn" class="btn btn-primary btn-large">🚀 Start Game</button>
+                    <button id="cancel-coop-btn" class="btn btn-secondary">← Back to Menu</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Online Lobby Screen -->
+        <div id="online-lobby-screen" class="screen">
+            <h2>🌐 Online Multiplayer</h2>
+            <div id="connection-status" class="connection-status">
+                <span class="status-indicator"></span>
+                <span class="status-text">Connecting to server...</span>
+            </div>
+            <div class="online-lobby-container">
+                <div class="rooms-section">
+                    <h3>Available Rooms</h3>
+                    <div id="rooms-list" class="rooms-list">
+                        <!-- Rooms will be dynamically added here -->
+                    </div>
+                    <button id="create-room-btn" class="btn btn-primary">➕ Create New Room</button>
+                </div>
+                <div id="room-view" class="room-view" style="display: none;">
+                    <div class="room-header">
+                        <h3 id="room-name">Room Name</h3>
+                        <button id="leave-room-btn" class="btn btn-secondary btn-small">← Leave Room</button>
+                    </div>
+                    <div class="room-players">
+                        <h4>Players in Room</h4>
+                        <div id="room-players-list" class="room-players-list">
+                            <!-- Players will be dynamically added here -->
+                        </div>
+                    </div>
+                    <div class="color-selector-section">
+                        <h4>Your Color</h4>
+                        <div id="color-options" class="color-options">
+                            <!-- Color options will be dynamically added here -->
+                        </div>
+                    </div>
+                    <button id="ready-btn" class="btn btn-primary btn-large">✓ Ready</button>
+                    <div id="room-status" class="room-status">Waiting for players...</div>
+                </div>
+            </div>
+            <button id="back-from-online-btn" class="btn btn-secondary">← Back to Menu</button>
         </div>
 
         <!-- Game Screen -->
@@ -59,13 +135,6 @@
             </div>
             <div id="game-container">
                 <!-- Player boards will be dynamically created here -->
-            </div>
-            <div id="player-info-sidebar" class="player-info-sidebar">
-                <!-- Player info will be dynamically created here -->
-            </div>
-            <div class="game-controls">
-                <button id="pause-btn" class="btn btn-secondary">Pause</button>
-                <button id="quit-btn" class="btn btn-secondary">Main Menu</button>
             </div>
             <div id="touch-controls" class="touch-controls">
                 <div id="touch-status" class="touch-status"></div>
@@ -112,6 +181,7 @@
         </div>
     </div>
 
+    <script src="network.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

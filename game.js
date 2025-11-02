@@ -568,6 +568,8 @@ class UIManager {
     constructor() {
         this.screens = {
             mainMenu: document.getElementById('main-menu'),
+            coopSetup: document.getElementById('coop-setup-screen'),
+            onlineLobby: document.getElementById('online-lobby-screen'),
             gameScreen: document.getElementById('game-screen'),
             settingsScreen: document.getElementById('settings-screen')
         };
@@ -586,7 +588,6 @@ class UIManager {
         this.comboLabel = document.getElementById('combo-label');
         this.comboBonus = document.getElementById('combo-bonus');
         this.clearFeed = document.getElementById('clear-feed');
-        this.gameControls = document.querySelector('.game-controls');
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
 
@@ -696,20 +697,40 @@ class UIManager {
     }
 
     setupEventListeners() {
-        // Mode selection
-        document.getElementById('mode-1p').addEventListener('click', () => this.startGame(1));
-        document.getElementById('mode-2p').addEventListener('click', () => this.startGame(2));
-        document.getElementById('mode-3p').addEventListener('click', () => this.startGame(3));
-        document.getElementById('mode-4p').addEventListener('click', () => this.startGame(4));
+        // Mode selection - new menu structure
+        document.getElementById('mode-single').addEventListener('click', () => this.startGame(1));
+        document.getElementById('mode-local').addEventListener('click', () => this.showCoopSetup());
+        document.getElementById('mode-online').addEventListener('click', () => this.showOnlineLobby());
+
+        // Co-op setup
+        document.querySelectorAll('.player-count-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.selectPlayerCount(btn));
+        });
+        document.getElementById('start-coop-btn').addEventListener('click', () => this.startCoopGame());
+        document.getElementById('cancel-coop-btn').addEventListener('click', () => this.showScreen('mainMenu'));
+
+        // Online lobby
+        document.getElementById('back-from-online-btn').addEventListener('click', () => this.showScreen('mainMenu'));
+        document.getElementById('create-room-btn').addEventListener('click', () => this.createRoom());
+        const leaveRoomBtn = document.getElementById('leave-room-btn');
+        if (leaveRoomBtn) {
+            leaveRoomBtn.addEventListener('click', () => this.leaveRoom());
+        }
+        const readyBtn = document.getElementById('ready-btn');
+        if (readyBtn) {
+            readyBtn.addEventListener('click', () => this.toggleReady());
+        }
 
         // Settings
         document.getElementById('settings-btn').addEventListener('click', () => this.showSettings());
         document.getElementById('save-settings-btn').addEventListener('click', () => this.saveSettings());
         document.getElementById('cancel-settings-btn').addEventListener('click', () => this.hideSettings());
 
-        // Game controls
-        document.getElementById('pause-btn').addEventListener('click', () => this.togglePause());
-        document.getElementById('quit-btn').addEventListener('click', () => this.quitToMenu());
+        // Game controls - now in header
+        const pauseBtn = document.getElementById('pause-btn');
+        const quitBtn = document.getElementById('quit-btn');
+        if (pauseBtn) pauseBtn.addEventListener('click', () => this.togglePause());
+        if (quitBtn) quitBtn.addEventListener('click', () => this.quitToMenu());
 
         // Pause menu
         document.getElementById('resume-btn').addEventListener('click', () => this.togglePause());
@@ -841,6 +862,19 @@ class UIManager {
     showScreen(screenName) {
         Object.values(this.screens).forEach(screen => screen.classList.remove('active'));
         this.screens[screenName].classList.add('active');
+
+        // Show/hide header buttons based on screen
+        const pauseBtn = document.getElementById('pause-btn');
+        const quitBtn = document.getElementById('quit-btn');
+        if (pauseBtn && quitBtn) {
+            if (screenName === 'gameScreen') {
+                pauseBtn.style.display = 'inline-flex';
+                quitBtn.style.display = 'inline-flex';
+            } else {
+                pauseBtn.style.display = 'none';
+                quitBtn.style.display = 'none';
+            }
+        }
 
         if (screenName === 'gameScreen') {
             this.updateLayoutDensity();
@@ -1736,6 +1770,356 @@ class UIManager {
         });
 
         this.showModal('gameOver');
+    }
+
+    showCoopSetup() {
+        this.showScreen('coopSetup');
+        this.updateCoopPlayerConfig(1); // Default to 1 player
+    }
+
+    selectPlayerCount(btn) {
+        // Update button states
+        document.querySelectorAll('.player-count-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        const count = parseInt(btn.dataset.count);
+        this.updateCoopPlayerConfig(count);
+    }
+
+    updateCoopPlayerConfig(numPlayers) {
+        const container = document.getElementById('coop-players-config');
+        container.innerHTML = '';
+
+        for (let i = 0; i < numPlayers; i++) {
+            const card = document.createElement('div');
+            card.className = 'coop-player-card';
+            
+            const color = gameState.settings.colors[i] || DEFAULT_COLORS[i];
+            const keys = gameState.settings.keys[i] || DEFAULT_KEYS[i];
+            
+            card.innerHTML = `
+                <h4>
+                    <span class="player-color-badge" style="background: ${color};"></span>
+                    Player ${i + 1}
+                </h4>
+                <div class="color-picker">
+                    <label>Block Color:</label>
+                    <input type="color" id="coop-color-${i}" value="${color}">
+                </div>
+                <div class="key-bindings">
+                    <div class="key-binding">
+                        <label>Left:</label>
+                        <input type="text" id="coop-key-${i}-left" value="${formatKeyLabel(keys.left)}" 
+                               data-key-code="${keys.left}" readonly>
+                    </div>
+                    <div class="key-binding">
+                        <label>Right:</label>
+                        <input type="text" id="coop-key-${i}-right" value="${formatKeyLabel(keys.right)}" 
+                               data-key-code="${keys.right}" readonly>
+                    </div>
+                    <div class="key-binding">
+                        <label>Down:</label>
+                        <input type="text" id="coop-key-${i}-down" value="${formatKeyLabel(keys.down)}" 
+                               data-key-code="${keys.down}" readonly>
+                    </div>
+                    <div class="key-binding">
+                        <label>Rotate:</label>
+                        <input type="text" id="coop-key-${i}-rotate" value="${formatKeyLabel(keys.rotate)}" 
+                               data-key-code="${keys.rotate}" readonly>
+                    </div>
+                    <div class="key-binding">
+                        <label>Drop:</label>
+                        <input type="text" id="coop-key-${i}-drop" value="${formatKeyLabel(keys.drop)}" 
+                               data-key-code="${keys.drop}" readonly>
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(card);
+
+            // Add event listener for key binding inputs
+            const actions = ['left', 'right', 'down', 'rotate', 'drop'];
+            actions.forEach(action => {
+                const input = document.getElementById(`coop-key-${i}-${action}`);
+                if (input) {
+                    input.addEventListener('click', () => this.captureKey(input, i, action));
+                }
+            });
+
+            // Add event listener for color picker
+            const colorInput = document.getElementById(`coop-color-${i}`);
+            if (colorInput) {
+                colorInput.addEventListener('change', (e) => {
+                    gameState.settings.colors[i] = e.target.value;
+                    const badge = card.querySelector('.player-color-badge');
+                    if (badge) badge.style.background = e.target.value;
+                });
+            }
+        }
+    }
+
+    captureKey(input, playerIndex, action) {
+        input.value = 'Press a key...';
+        input.classList.add('capturing');
+        
+        const handler = (e) => {
+            e.preventDefault();
+            const code = e.code || e.key;
+            input.value = formatKeyLabel(code);
+            input.dataset.keyCode = code;
+            gameState.settings.keys[playerIndex][action] = code;
+            input.classList.remove('capturing');
+            document.removeEventListener('keydown', handler);
+        };
+        
+        document.addEventListener('keydown', handler);
+    }
+
+    startCoopGame() {
+        // Get the selected player count
+        const activeBtn = document.querySelector('.player-count-btn.active');
+        const numPlayers = activeBtn ? parseInt(activeBtn.dataset.count) : 1;
+        
+        // Save the current co-op settings
+        for (let i = 0; i < numPlayers; i++) {
+            const colorInput = document.getElementById(`coop-color-${i}`);
+            if (colorInput) {
+                gameState.settings.colors[i] = colorInput.value;
+            }
+        }
+        
+        // Save to localStorage
+        localStorage.setItem('blockies-settings', JSON.stringify(gameState.settings));
+        
+        // Start the game
+        this.startGame(numPlayers);
+    }
+
+    showOnlineLobby() {
+        this.showScreen('onlineLobby');
+        this.updateConnectionStatus('connecting');
+        
+        // Setup network callbacks
+        networkManager.on('connect', () => {
+            this.updateConnectionStatus('connected');
+        });
+
+        networkManager.on('disconnect', () => {
+            this.updateConnectionStatus('disconnected');
+            this.showRoomsList([]);
+        });
+
+        networkManager.on('roomsList', (rooms) => {
+            this.showRoomsList(rooms);
+        });
+
+        networkManager.on('roomCreated', (room) => {
+            this.showRoomView(room);
+        });
+
+        networkManager.on('roomJoined', (room) => {
+            this.showRoomView(room);
+        });
+
+        networkManager.on('roomUpdate', (room) => {
+            this.updateRoomView(room);
+        });
+
+        networkManager.on('leftRoom', () => {
+            this.hideRoomView();
+        });
+
+        networkManager.on('gameStart', (data) => {
+            this.startOnlineGame(data);
+        });
+
+        networkManager.on('error', (message) => {
+            alert('Error: ' + message);
+        });
+
+        // Connect to server
+        networkManager.connect();
+    }
+
+    updateConnectionStatus(status) {
+        const statusEl = document.querySelector('.connection-status');
+        const indicator = statusEl.querySelector('.status-indicator');
+        const text = statusEl.querySelector('.status-text');
+        
+        indicator.className = 'status-indicator ' + status;
+        
+        switch(status) {
+            case 'connecting':
+                text.textContent = 'Connecting to server...';
+                break;
+            case 'connected':
+                text.textContent = 'Connected to server';
+                break;
+            case 'disconnected':
+                text.textContent = 'Server not available';
+                break;
+        }
+    }
+
+    showRoomsList(rooms) {
+        const container = document.getElementById('rooms-list');
+        container.innerHTML = '';
+        
+        if (rooms.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">No rooms available. Create one to start!</p>';
+        } else {
+            rooms.forEach(room => {
+                const roomDiv = document.createElement('div');
+                roomDiv.className = 'room-item';
+                roomDiv.innerHTML = `
+                    <div class="room-info">
+                        <h4>${room.name}</h4>
+                        <p>${room.players}/${room.maxPlayers} players</p>
+                    </div>
+                    <button class="btn btn-primary btn-small">Join</button>
+                `;
+                roomDiv.querySelector('.btn').addEventListener('click', () => this.joinRoom(room.id));
+                container.appendChild(roomDiv);
+            });
+        }
+    }
+
+    createRoom() {
+        const roomName = prompt('Enter room name:', 'My Room');
+        if (roomName) {
+            networkManager.createRoom(roomName);
+        }
+    }
+
+    joinRoom(roomId) {
+        networkManager.joinRoom(roomId);
+    }
+
+    leaveRoom() {
+        networkManager.leaveRoom();
+    }
+
+    toggleReady() {
+        networkManager.toggleReady();
+        const btn = document.getElementById('ready-btn');
+        if (btn) {
+            if (btn.textContent.includes('Ready')) {
+                btn.textContent = '⏳ Waiting...';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+            } else {
+                btn.textContent = '✓ Ready';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-primary');
+            }
+        }
+    }
+
+    showRoomView(room) {
+        const roomView = document.getElementById('room-view');
+        const roomsSection = document.querySelector('.rooms-section');
+        
+        if (roomView && roomsSection) {
+            roomsSection.style.display = 'none';
+            roomView.style.display = 'block';
+            this.updateRoomView(room);
+        }
+    }
+
+    hideRoomView() {
+        const roomView = document.getElementById('room-view');
+        const roomsSection = document.querySelector('.rooms-section');
+        
+        if (roomView && roomsSection) {
+            roomView.style.display = 'none';
+            roomsSection.style.display = 'block';
+        }
+    }
+
+    updateRoomView(room) {
+        const roomNameEl = document.getElementById('room-name');
+        const playersListEl = document.getElementById('room-players-list');
+        const colorOptionsEl = document.getElementById('color-options');
+        const statusEl = document.getElementById('room-status');
+        
+        if (roomNameEl) {
+            roomNameEl.textContent = room.name;
+        }
+
+        // Update players list
+        if (playersListEl) {
+            playersListEl.innerHTML = '';
+            room.players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'room-player-item';
+                playerDiv.innerHTML = `
+                    <div class="room-player-color" style="background: ${player.color};"></div>
+                    <div class="room-player-name">${player.name}</div>
+                    <div class="room-player-status">${player.ready ? '✓ Ready' : 'Not Ready'}</div>
+                `;
+                playersListEl.appendChild(playerDiv);
+            });
+        }
+
+        // Update color options
+        if (colorOptionsEl) {
+            colorOptionsEl.innerHTML = '';
+            const COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
+            const myPlayer = room.players.find(p => p.id === networkManager.socket.id);
+            
+            COLORS.forEach(color => {
+                const colorDiv = document.createElement('div');
+                colorDiv.className = 'color-option';
+                colorDiv.style.background = color;
+                
+                const isUsed = room.players.some(p => p.color === color);
+                const isMyColor = myPlayer && myPlayer.color === color;
+                
+                if (isMyColor) {
+                    colorDiv.classList.add('selected');
+                } else if (isUsed) {
+                    colorDiv.classList.add('disabled');
+                } else {
+                    colorDiv.addEventListener('click', () => {
+                        networkManager.changeColor(color);
+                    });
+                }
+                
+                colorOptionsEl.appendChild(colorDiv);
+            });
+        }
+
+        // Update status
+        if (statusEl) {
+            const readyCount = room.players.filter(p => p.ready).length;
+            if (readyCount === room.players.length && room.players.length > 0) {
+                statusEl.textContent = 'Starting game...';
+                statusEl.style.background = 'rgba(46, 213, 115, 0.15)';
+                statusEl.style.borderColor = 'rgba(46, 213, 115, 0.3)';
+            } else {
+                statusEl.textContent = `${readyCount}/${room.players.length} players ready`;
+                statusEl.style.background = 'rgba(255, 219, 88, 0.15)';
+                statusEl.style.borderColor = 'rgba(255, 219, 88, 0.3)';
+            }
+        }
+    }
+
+    startOnlineGame(data) {
+        // Map network players to game players
+        const numPlayers = data.players.length;
+        
+        // Update game state with player colors from network
+        data.players.forEach((netPlayer, index) => {
+            gameState.settings.colors[index] = netPlayer.color;
+        });
+        
+        this.startGame(numPlayers);
+        
+        // Note: Full online game synchronization (real-time piece movement, board state sync) 
+        // is not implemented in this version. The game currently supports room management,
+        // player setup, and basic multiplayer session initialization. Future enhancements
+        // should add real-time game state synchronization for networked gameplay.
+        console.log('Online game started with players:', data.players);
     }
 
     showSettings() {
