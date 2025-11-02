@@ -15,6 +15,7 @@ class SoundManager {
         this.audioContext = null;
         this.enabled = true;
         this.initAudio();
+        this.loadSettings();
     }
 
     initAudio() {
@@ -24,6 +25,24 @@ class SoundManager {
             console.log('Web Audio API not supported');
             this.enabled = false;
         }
+    }
+
+    loadSettings() {
+        const saved = localStorage.getItem('blockies-sound-enabled');
+        if (saved !== null) {
+            this.enabled = saved === 'true';
+        }
+    }
+
+    toggle() {
+        this.enabled = !this.enabled;
+        localStorage.setItem('blockies-sound-enabled', this.enabled.toString());
+        return this.enabled;
+    }
+
+    setEnabled(enabled) {
+        this.enabled = enabled;
+        localStorage.setItem('blockies-sound-enabled', this.enabled.toString());
     }
 
     playTone(frequency, duration, volume = 0.1) {
@@ -754,6 +773,7 @@ class UIManager {
         // Settings
         document.getElementById('settings-btn').addEventListener('click', () => this.showSettings());
         document.getElementById('save-settings-btn').addEventListener('click', () => this.saveSettings());
+        document.getElementById('reset-settings-btn').addEventListener('click', () => this.resetSettings());
         document.getElementById('cancel-settings-btn').addEventListener('click', () => this.hideSettings());
 
         // Game controls - now in header
@@ -1645,7 +1665,7 @@ class UIManager {
     }
 
     handleKeyPress(e) {
-        const code = e.code;
+        const code = normalizeKeyCode(e.code);
         const isGameActive = this.screens.gameScreen.classList.contains('active') && gameState.players.length;
 
         if (code === 'Escape') {
@@ -1720,7 +1740,7 @@ class UIManager {
     }
 
     handleKeyRelease(e) {
-        const code = e.code;
+        const code = normalizeKeyCode(e.code);
         const isGameActive = this.screens.gameScreen.classList.contains('active') && gameState.players.length;
 
         if (!isGameActive) {
@@ -2226,12 +2246,75 @@ class UIManager {
         });
     }
 
+    showStyledMessage(title, message, type = 'info') {
+        // Create or get message overlay
+        let overlay = document.getElementById('message-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'message-overlay';
+            overlay.className = 'message-overlay';
+            document.body.appendChild(overlay);
+        }
+        
+        // Create message box
+        const messageBox = document.createElement('div');
+        messageBox.className = `message-box message-${type}`;
+        
+        const titleEl = document.createElement('h3');
+        titleEl.textContent = title;
+        messageBox.appendChild(titleEl);
+        
+        const messageEl = document.createElement('p');
+        messageEl.textContent = message;
+        messageEl.style.whiteSpace = 'pre-wrap';
+        messageBox.appendChild(messageEl);
+        
+        overlay.innerHTML = '';
+        overlay.appendChild(messageBox);
+        overlay.style.display = 'flex';
+        
+        // Auto hide after delay for success messages
+        if (type === 'success') {
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 2000);
+        } else {
+            // Add close button for warnings/errors
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'OK';
+            closeBtn.className = 'btn btn-primary';
+            closeBtn.onclick = () => {
+                overlay.style.display = 'none';
+            };
+            messageBox.appendChild(closeBtn);
+        }
+    }
+
     showSettings() {
         const container = document.getElementById('settings-container');
         container.innerHTML = '';
 
+        // Add global settings section
+        const globalDiv = document.createElement('div');
+        globalDiv.className = 'global-settings';
+        globalDiv.innerHTML = `
+            <h3>Global Settings</h3>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="sound-enabled" ${soundManager.enabled ? 'checked' : ''}>
+                    Sound Effects
+                </label>
+            </div>
+        `;
+        container.appendChild(globalDiv);
+
         // Only show settings for the current number of players, or all 4 if no game is active
         const numPlayersToShow = gameState.numPlayers > 0 ? gameState.numPlayers : 4;
+
+        const playersTitle = document.createElement('h3');
+        playersTitle.textContent = 'Player Settings';
+        playersTitle.style.marginTop = '24px';
+        container.appendChild(playersTitle);
 
         for (let i = 0; i < numPlayersToShow; i++) {
             const playerDiv = document.createElement('div');
@@ -2339,26 +2422,115 @@ class UIManager {
     saveSettings() {
         const numPlayersToSave = gameState.numPlayers > 0 ? gameState.numPlayers : 4;
 
-        // Save colors
+        // Save global settings
+        const soundCheckbox = document.getElementById('sound-enabled');
+        if (soundCheckbox) {
+            soundManager.setEnabled(soundCheckbox.checked);
+        }
+
+        // Collect all settings first for validation
+        const newColors = [];
+        const newKeys = [];
+        
+        // Collect colors
         for (let i = 0; i < numPlayersToSave; i++) {
             const colorInput = document.getElementById(`color-${i}`);
             if (colorInput) {
-                gameState.settings.colors[i] = colorInput.value;
+                newColors[i] = colorInput.value;
             }
         }
 
-        // Save key bindings
+        // Check for color conflicts
+        const colorConflicts = [];
         for (let i = 0; i < numPlayersToSave; i++) {
+            for (let j = i + 1; j < numPlayersToSave; j++) {
+                if (newColors[i] && newColors[j] && newColors[i] === newColors[j]) {
+                    colorConflicts.push(`Player ${i + 1} and Player ${j + 1} have the same color`);
+                }
+            }
+        }
+        
+        if (colorConflicts.length > 0) {
+            this.showStyledMessage('Color Conflict', colorConflicts.join('\n') + '\n\nPlease choose unique colors for each player.', 'warning');
+            return;
+        }
+
+        // Collect key bindings
+        for (let i = 0; i < numPlayersToSave; i++) {
+            newKeys[i] = {};
             const actions = ['left', 'right', 'down', 'rotate', 'drop'];
             actions.forEach(action => {
                 const keyInput = document.getElementById(`key-${i}-${action}`);
-                if (!keyInput) return;
-                const storedCode = keyInput.dataset.keyCode || '';
-                const finalCode = normalizeKeyCode(storedCode || keyInput.value);
-                if (finalCode) {
-                    gameState.settings.keys[i][action] = finalCode;
+                if (keyInput) {
+                    const storedCode = keyInput.dataset.keyCode || '';
+                    const finalCode = normalizeKeyCode(storedCode || keyInput.value);
+                    if (finalCode) {
+                        newKeys[i][action] = finalCode;
+                    }
                 }
             });
+        }
+
+        // Check for key conflicts between players
+        const keyConflicts = [];
+        const keyUsage = new Map(); // Map of key -> [{player, action}]
+        
+        for (let i = 0; i < numPlayersToSave; i++) {
+            const actions = ['left', 'right', 'down', 'rotate', 'drop'];
+            actions.forEach(action => {
+                const key = newKeys[i]?.[action];
+                if (key) {
+                    if (!keyUsage.has(key)) {
+                        keyUsage.set(key, []);
+                    }
+                    keyUsage.get(key).push({ player: i + 1, action });
+                }
+            });
+        }
+        
+        // Find conflicts
+        keyUsage.forEach((usages, key) => {
+            if (usages.length > 1) {
+                const description = usages.map(u => `Player ${u.player} (${u.action})`).join(', ');
+                keyConflicts.push(`Key "${formatKeyLabel(key)}" is used by: ${description}`);
+            }
+        });
+        
+        if (keyConflicts.length > 0) {
+            this.showStyledMessage('Key Binding Conflict', keyConflicts.join('\n') + '\n\nPlease assign unique keys for each action.', 'warning');
+            return;
+        }
+
+        // Check for gamepad conflicts
+        const gamepadConflicts = [];
+        const gamepadUsage = new Map();
+        
+        for (let i = 0; i < numPlayersToSave; i++) {
+            const select = document.getElementById(`gamepad-${i}`);
+            if (select && select.value !== '') {
+                const gamepadIndex = parseInt(select.value);
+                if (!gamepadUsage.has(gamepadIndex)) {
+                    gamepadUsage.set(gamepadIndex, []);
+                }
+                gamepadUsage.get(gamepadIndex).push(i + 1);
+            }
+        }
+        
+        gamepadUsage.forEach((players, gamepadIndex) => {
+            if (players.length > 1) {
+                gamepadConflicts.push(`Gamepad ${gamepadIndex + 1} is assigned to: Player ${players.join(', Player ')}`);
+            }
+        });
+        
+        if (gamepadConflicts.length > 0) {
+            this.showStyledMessage('Gamepad Conflict', gamepadConflicts.join('\n') + '\n\nEach gamepad can only be assigned to one player.', 'warning');
+            return;
+        }
+
+        // All validations passed, save settings
+        for (let i = 0; i < numPlayersToSave; i++) {
+            gameState.settings.colors[i] = newColors[i];
+            gameState.settings.keys[i] = newKeys[i];
         }
         
         // Save gamepad assignments
@@ -2375,8 +2547,32 @@ class UIManager {
         localStorage.setItem('blockies-settings', JSON.stringify(gameState.settings));
         localStorage.setItem('blockies-gamepad-assignments', JSON.stringify(gameState.gamepads.assignments));
 
-        // Return to previous screen instead of always going to main menu
-        this.showScreen(this.previousScreen || 'mainMenu');
+        // Show success message
+        this.showStyledMessage('Settings Saved', 'Your settings have been saved successfully!', 'success');
+
+        // Return to previous screen after a short delay
+        setTimeout(() => {
+            this.showScreen(this.previousScreen || 'mainMenu');
+        }, 1500);
+    }
+
+    resetSettings() {
+        // Reset to defaults
+        gameState.settings.colors = [...DEFAULT_COLORS];
+        gameState.settings.keys = JSON.parse(JSON.stringify(DEFAULT_KEYS));
+        gameState.gamepads.assignments = {};
+        
+        // Clear localStorage
+        localStorage.removeItem('blockies-settings');
+        localStorage.removeItem('blockies-gamepad-assignments');
+        
+        // Show success message
+        this.showStyledMessage('Settings Reset', 'All settings have been reset to default values!', 'success');
+        
+        // Refresh the settings display
+        setTimeout(() => {
+            this.showSettings();
+        }, 1500);
     }
 
     hideSettings() {
