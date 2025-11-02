@@ -75,6 +75,13 @@ const TRANSLATIONS = {
         serverUnavailable: "Server is currently unavailable. Please try again later.",
         socketIoNotAvailable: "Unable to connect to multiplayer server.",
         
+        // Touch controls
+        touchControlsReady: "Touch controls ready",
+        startGameForTouch: "Start a game to use touch controls",
+        
+        // Combo help
+        comboHelp: "Clear lines consecutively without gaps to build a combo chain! Each combo increases your score by +10% per chain level.",
+        
         // Online
         onlineMultiplayer: "Online Multiplayer",
         connectingToServer: "Connecting to server...",
@@ -181,6 +188,13 @@ const TRANSLATIONS = {
         serverUnavailable: "Сервер временно недоступен. Попробуйте позже.",
         socketIoNotAvailable: "Не удалось подключиться к серверу мультиплеера.",
         
+        // Touch controls
+        touchControlsReady: "Сенсорное управление готово",
+        startGameForTouch: "Начните игру для использования сенсорного управления",
+        
+        // Combo help
+        comboHelp: "Убирайте линии подряд без пропусков, чтобы создать комбо-цепочку! Каждое комбо увеличивает ваш счёт на +10% за уровень цепочки.",
+        
         // Online
         onlineMultiplayer: "Сетевая игра",
         connectingToServer: "Подключение к серверу...",
@@ -239,6 +253,11 @@ function updateUILanguage() {
         const key = el.getAttribute('data-i18n-placeholder');
         el.placeholder = t(key);
     });
+    
+    // Update combo tooltip if UI manager exists
+    if (window.uiManager && window.uiManager.updateComboTooltip) {
+        window.uiManager.updateComboTooltip();
+    }
 }
 
 // Game Configuration
@@ -904,6 +923,11 @@ class UIManager {
         this.clearFeed = document.getElementById('clear-feed');
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
+        
+        // Set combo help tooltip
+        if (this.comboIndicator) {
+            this.updateComboTooltip();
+        }
         this.previousScreen = 'mainMenu'; // Track previous screen for settings navigation (matches screen key)
         this.isOnlineMode = false; // Flag for online multiplayer mode
         this.networkPlayers = {}; // Map of network player IDs to local indices
@@ -1128,7 +1152,7 @@ class UIManager {
         });
 
         if (this.touchStatus) {
-            this.touchStatus.textContent = 'Start a game to use touch controls';
+            this.touchStatus.textContent = t('startGameForTouch');
         }
     }
 
@@ -1137,11 +1161,15 @@ class UIManager {
 
         const activePlayer = this.getTouchPlayer();
         if (activePlayer && !gameState.isGameOver) {
-            this.touchStatus.textContent = `Touch controls: Player ${activePlayer.id + 1}`;
+            this.touchStatus.textContent = currentLanguage === 'ru' 
+                ? `Сенсорное управление: Игрок ${activePlayer.id + 1}`
+                : `Touch controls: Player ${activePlayer.id + 1}`;
         } else if (gameState.players.length && gameState.players.every(player => player.gameOver)) {
-            this.touchStatus.textContent = 'All players have finished';
+            this.touchStatus.textContent = currentLanguage === 'ru'
+                ? 'Все игроки завершили игру'
+                : 'All players have finished';
         } else {
-            this.touchStatus.textContent = 'Start a game to use touch controls';
+            this.touchStatus.textContent = t('startGameForTouch');
         }
     }
 
@@ -1260,7 +1288,7 @@ class UIManager {
             } else {
                 this.touchControls.classList.remove('visible');
                 if (this.touchStatus) {
-                    this.touchStatus.textContent = 'Start a game to use touch controls';
+                    this.touchStatus.textContent = t('startGameForTouch');
                 }
             }
         }
@@ -1685,6 +1713,12 @@ class UIManager {
 
         this.lastComboChain = chain;
         this.scheduleBoardScaleUpdate();
+    }
+    
+    updateComboTooltip() {
+        if (this.comboIndicator) {
+            this.comboIndicator.title = t('comboHelp');
+        }
     }
 
     flashScoreCard() {
