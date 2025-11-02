@@ -15,9 +15,13 @@
         <header>
             <h1><span>Blockies</span> Arcade</h1>
             <div class="menu-buttons">
-                <button id="pause-btn" class="btn btn-secondary" style="display: none;">⏸ Pause</button>
-                <button id="quit-btn" class="btn btn-secondary" style="display: none;">🏠 Menu</button>
-                <button id="settings-btn" class="btn btn-secondary">⚙ Settings</button>
+                <button id="pause-btn" class="btn btn-secondary" style="display: none;">⏸ <span data-i18n="pause">Pause</span></button>
+                <button id="quit-btn" class="btn btn-secondary" style="display: none;">🏠 <span data-i18n="menu">Menu</span></button>
+                <button id="settings-btn" class="btn btn-secondary">⚙ <span data-i18n="settings">Settings</span></button>
+                <select id="language-selector" class="language-selector">
+                    <option value="en">EN</option>
+                    <option value="ru">РУ</option>
+                </select>
                 <div id="gamepad-status" class="gamepad-status"></div>
             </div>
         </header>
@@ -25,8 +29,8 @@
         <!-- Main Menu -->
         <div id="main-menu" class="screen active">
             <div class="game-info">
-                <h2>Welcome to Blockies!</h2>
-                <p>Stack vibrant neon blocks in this modern take on the classic puzzle game. Play solo or team up with friends!</p>
+                <h2 data-i18n="welcome">Welcome to Blockies!</h2>
+                <p data-i18n="tagline">Stack vibrant neon blocks in this modern take on the classic puzzle game. Play solo or team up with friends!</p>
                 <ul class="feature-list">
                     <li>🎮 Multiple Game Modes</li>
                     <li>👥 Local & Online Multiplayer</li>
@@ -35,18 +39,18 @@
                 <div class="mode-selection">
                     <button id="mode-single" class="mode-btn mode-btn-primary">
                         <span class="mode-icon">🎯</span>
-                        <span class="mode-title">Single Player</span>
-                        <span class="mode-desc">Play solo</span>
+                        <span class="mode-title" data-i18n="singlePlayer">Single Player</span>
+                        <span class="mode-desc" data-i18n="playSolo">Play solo</span>
                     </button>
                     <button id="mode-local" class="mode-btn mode-btn-success">
                         <span class="mode-icon">👥</span>
-                        <span class="mode-title">Local Co-op</span>
-                        <span class="mode-desc">Play together</span>
+                        <span class="mode-title" data-i18n="localCoop">Local Co-op</span>
+                        <span class="mode-desc" data-i18n="playTogether">Play together</span>
                     </button>
                     <button id="mode-online" class="mode-btn mode-btn-info">
                         <span class="mode-icon">🌐</span>
-                        <span class="mode-title">Online</span>
-                        <span class="mode-desc">Play over network</span>
+                        <span class="mode-title" data-i18n="online">Online</span>
+                        <span class="mode-desc" data-i18n="playOverNetwork">Play over network</span>
                     </button>
                 </div>
             </div>
@@ -54,10 +58,10 @@
 
         <!-- Local Co-op Setup Screen -->
         <div id="coop-setup-screen" class="screen">
-            <h2>🎮 Local Co-op Setup</h2>
+            <h2>🎮 <span data-i18n="localCoopSetup">Local Co-op Setup</span></h2>
             <div class="coop-setup-container">
                 <div class="player-count-section">
-                    <h3>Number of Players</h3>
+                    <h3 data-i18n="numberOfPlayers">Number of Players</h3>
                     <div class="player-count-selector">
                         <button class="player-count-btn active" data-count="1">1</button>
                         <button class="player-count-btn" data-count="2">2</button>
@@ -69,8 +73,8 @@
                     <!-- Player configurations will be dynamically added here -->
                 </div>
                 <div class="coop-setup-actions">
-                    <button id="start-coop-btn" class="btn btn-primary btn-large">🚀 Start Game</button>
-                    <button id="cancel-coop-btn" class="btn btn-secondary">← Back to Menu</button>
+                    <button id="start-coop-btn" class="btn btn-primary btn-large">🚀 <span data-i18n="startGame">Start Game</span></button>
+                    <button id="cancel-coop-btn" class="btn btn-secondary">← <span data-i18n="backToMenu">Back to Menu</span></button>
                 </div>
             </div>
         </div>
@@ -156,14 +160,14 @@
 
         <!-- Settings Screen -->
         <div id="settings-screen" class="screen">
-            <h2>Settings</h2>
+            <h2 data-i18n="settings">Settings</h2>
             <div id="settings-container">
                 <!-- Settings will be dynamically created here -->
             </div>
             <div class="settings-actions">
-                <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
-                <button id="reset-settings-btn" class="btn btn-warning">Reset to Default</button>
-                <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
+                <button id="save-settings-btn" class="btn btn-primary" data-i18n="saveSettings">Save Settings</button>
+                <button id="reset-settings-btn" class="btn btn-warning" data-i18n="resetToDefault">Reset to Default</button>
+                <button id="cancel-settings-btn" class="btn btn-secondary" data-i18n="cancel">Cancel</button>
             </div>
         </div>
 

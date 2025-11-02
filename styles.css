@@ -1854,3 +1854,28 @@ canvas {
     height: 20px;
     cursor: pointer;
 }
+
+/* Language Selector */
+.language-selector {
+    padding: 8px 12px;
+    border: 2px solid rgba(196, 113, 237, 0.3);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-left: 8px;
+}
+
+.language-selector:hover {
+    border-color: var(--accent-strong);
+    box-shadow: 0 0 0 3px rgba(196, 113, 237, 0.1);
+}
+
+.language-selector:focus {
+    outline: none;
+    border-color: var(--accent-strong);
+    box-shadow: 0 0 0 3px rgba(196, 113, 237, 0.15);
+}

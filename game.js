@@ -1,3 +1,186 @@
+// Localization
+const TRANSLATIONS = {
+    en: {
+        // Main Menu
+        welcome: "Welcome to Blockies!",
+        tagline: "Stack vibrant neon blocks in this modern take on the classic puzzle game. Play solo or team up with friends!",
+        singlePlayer: "Single Player",
+        localCoop: "Local Co-op",
+        online: "Online",
+        playSolo: "Play solo",
+        playTogether: "Play together",
+        playOverNetwork: "Play over network",
+        
+        // Settings
+        settings: "Settings",
+        globalSettings: "Global Settings",
+        soundEffects: "Sound Effects",
+        playerSettings: "Player Settings",
+        blockColor: "Block Color:",
+        gamepad: "Gamepad:",
+        keyboard: "Keyboard",
+        saveSettings: "Save Settings",
+        resetToDefault: "Reset to Default",
+        cancel: "Cancel",
+        
+        // Messages
+        settingsSaved: "Settings Saved",
+        settingsSavedMsg: "Your settings have been saved successfully!",
+        settingsReset: "Settings Reset",
+        settingsResetMsg: "All settings have been reset to default values!",
+        colorConflict: "Color Conflict",
+        colorConflictMsg: "Please choose unique colors for each player.",
+        keyBindingConflict: "Key Binding Conflict",
+        keyBindingConflictMsg: "Please assign unique keys for each action.",
+        gamepadConflict: "Gamepad Conflict",
+        gamepadConflictMsg: "Each gamepad can only be assigned to one player.",
+        networkError: "Network Error",
+        
+        // Game
+        pause: "Pause",
+        menu: "Menu",
+        gamePaused: "Game Paused",
+        resume: "Resume",
+        restart: "Restart",
+        mainMenu: "Main Menu",
+        gameOver: "Game Over!",
+        playAgain: "Play Again",
+        teamScore: "Team Score",
+        lines: "lines",
+        
+        // Online
+        onlineMultiplayer: "Online Multiplayer",
+        connectingToServer: "Connecting to server...",
+        connectedToServer: "Connected to server",
+        disconnectedFromServer: "Disconnected from server",
+        yourNickname: "Your Nickname:",
+        enterYourName: "Enter your name...",
+        availableRooms: "Available Rooms",
+        createNewRoom: "Create New Room",
+        playersInRoom: "Players in Room",
+        yourColor: "Your Color",
+        ready: "Ready",
+        waitingForPlayers: "Waiting for players...",
+        leaveRoom: "Leave Room",
+        backToMenu: "Back to Menu",
+        
+        // Co-op
+        localCoopSetup: "Local Co-op Setup",
+        numberOfPlayers: "Number of Players",
+        startGame: "Start Game",
+        
+        // Keys
+        left: "Left",
+        right: "Right",
+        down: "Down",
+        rotate: "Rotate",
+        drop: "Drop"
+    },
+    ru: {
+        // Main Menu
+        welcome: "Добро пожаловать в Blockies!",
+        tagline: "Складывайте яркие неоновые блоки в этой современной версии классической головоломки. Играйте соло или в команде с друзьями!",
+        singlePlayer: "Одиночная игра",
+        localCoop: "Локальный кооп",
+        online: "Онлайн",
+        playSolo: "Играть в одиночку",
+        playTogether: "Играть вместе",
+        playOverNetwork: "Играть по сети",
+        
+        // Settings
+        settings: "Настройки",
+        globalSettings: "Общие настройки",
+        soundEffects: "Звуковые эффекты",
+        playerSettings: "Настройки игроков",
+        blockColor: "Цвет блоков:",
+        gamepad: "Геймпад:",
+        keyboard: "Клавиатура",
+        saveSettings: "Сохранить настройки",
+        resetToDefault: "Сбросить по умолчанию",
+        cancel: "Отмена",
+        
+        // Messages
+        settingsSaved: "Настройки сохранены",
+        settingsSavedMsg: "Ваши настройки успешно сохранены!",
+        settingsReset: "Настройки сброшены",
+        settingsResetMsg: "Все настройки сброшены к значениям по умолчанию!",
+        colorConflict: "Конфликт цветов",
+        colorConflictMsg: "Пожалуйста, выберите уникальные цвета для каждого игрока.",
+        keyBindingConflict: "Конфликт клавиш",
+        keyBindingConflictMsg: "Пожалуйста, назначьте уникальные клавиши для каждого действия.",
+        gamepadConflict: "Конфликт геймпадов",
+        gamepadConflictMsg: "Каждый геймпад может быть назначен только одному игроку.",
+        networkError: "Ошибка сети",
+        
+        // Game
+        pause: "Пауза",
+        menu: "Меню",
+        gamePaused: "Игра на паузе",
+        resume: "Продолжить",
+        restart: "Начать заново",
+        mainMenu: "Главное меню",
+        gameOver: "Игра окончена!",
+        playAgain: "Играть снова",
+        teamScore: "Командный счёт",
+        lines: "линий",
+        
+        // Online
+        onlineMultiplayer: "Сетевая игра",
+        connectingToServer: "Подключение к серверу...",
+        connectedToServer: "Подключено к серверу",
+        disconnectedFromServer: "Отключено от сервера",
+        yourNickname: "Ваш никнейм:",
+        enterYourName: "Введите ваше имя...",
+        availableRooms: "Доступные комнаты",
+        createNewRoom: "Создать новую комнату",
+        playersInRoom: "Игроки в комнате",
+        yourColor: "Ваш цвет",
+        ready: "Готов",
+        waitingForPlayers: "Ожидание игроков...",
+        leaveRoom: "Покинуть комнату",
+        backToMenu: "Назад в меню",
+        
+        // Co-op
+        localCoopSetup: "Настройка локального коопа",
+        numberOfPlayers: "Количество игроков",
+        startGame: "Начать игру",
+        
+        // Keys
+        left: "Влево",
+        right: "Вправо",
+        down: "Вниз",
+        rotate: "Повернуть",
+        drop: "Сбросить"
+    }
+};
+
+let currentLanguage = 'en';
+
+function t(key) {
+    return TRANSLATIONS[currentLanguage]?.[key] || TRANSLATIONS.en[key] || key;
+}
+
+function setLanguage(lang) {
+    if (!TRANSLATIONS[lang]) return;
+    currentLanguage = lang;
+    localStorage.setItem('blockies-language', lang);
+    updateUILanguage();
+}
+
+function updateUILanguage() {
+    // Update all elements with data-i18n attribute
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        el.textContent = t(key);
+    });
+    
+    // Update placeholders
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        el.placeholder = t(key);
+    });
+}
+
 // Game Configuration
 const BLOCK_SIZE = 25;
 const BASE_BOARD_WIDTH = 10;
@@ -746,6 +929,14 @@ class UIManager {
     }
 
     setupEventListeners() {
+        // Language selector
+        const languageSelector = document.getElementById('language-selector');
+        if (languageSelector) {
+            languageSelector.addEventListener('change', (e) => {
+                setLanguage(e.target.value);
+            });
+        }
+        
         // Mode selection - new menu structure
         document.getElementById('mode-single').addEventListener('click', () => this.startGame(1));
         document.getElementById('mode-local').addEventListener('click', () => this.showCoopSetup());
@@ -2320,11 +2511,11 @@ class UIManager {
         const globalDiv = document.createElement('div');
         globalDiv.className = 'global-settings';
         globalDiv.innerHTML = `
-            <h3>Global Settings</h3>
+            <h3>${t('globalSettings')}</h3>
             <div class="setting-item">
                 <label>
                     <input type="checkbox" id="sound-enabled" ${soundManager.enabled ? 'checked' : ''}>
-                    Sound Effects
+                    ${t('soundEffects')}
                 </label>
             </div>
         `;
@@ -2334,7 +2525,7 @@ class UIManager {
         const numPlayersToShow = gameState.numPlayers > 0 ? gameState.numPlayers : 4;
 
         const playersTitle = document.createElement('h3');
-        playersTitle.textContent = 'Player Settings';
+        playersTitle.textContent = t('playerSettings');
         playersTitle.style.marginTop = '24px';
         container.appendChild(playersTitle);
 
@@ -2343,7 +2534,7 @@ class UIManager {
             playerDiv.className = 'player-settings';
             
             const title = document.createElement('h3');
-            title.textContent = `Player ${i + 1}`;
+            title.textContent = `${t('singlePlayer').replace('Single Player', 'Player')} ${i + 1}`;
             playerDiv.appendChild(title);
 
             // Color picker
@@ -2351,7 +2542,7 @@ class UIManager {
             colorDiv.className = 'color-picker';
             const colorValue = gameState.settings.colors[i] || DEFAULT_COLORS[i];
             colorDiv.innerHTML = `
-                <label>Block Color:</label>
+                <label>${t('blockColor')}</label>
                 <input type="color" id="color-${i}" value="${colorValue}">
             `;
             playerDiv.appendChild(colorDiv);
@@ -2361,14 +2552,13 @@ class UIManager {
             keysDiv.className = 'key-bindings';
             
             const actions = ['left', 'right', 'down', 'rotate', 'drop'];
-            const labels = ['Left', 'Right', 'Down', 'Rotate', 'Drop'];
             
             actions.forEach((action, idx) => {
                 const bindingDiv = document.createElement('div');
                 bindingDiv.className = 'key-binding';
                 const currentCode = normalizeKeyCode(gameState.settings.keys[i][action] || DEFAULT_KEYS[i][action]);
                 bindingDiv.innerHTML = `
-                    <label>${labels[idx]}:</label>
+                    <label>${t(action)}:</label>
                     <input type="text" id="key-${i}-${action}"
                            value="${formatKeyLabel(currentCode)}"
                            readonly
@@ -2386,9 +2576,9 @@ class UIManager {
             const gamepadDiv = document.createElement('div');
             gamepadDiv.className = 'gamepad-picker';
             gamepadDiv.innerHTML = `
-                <label>Gamepad:</label>
+                <label>${t('gamepad')}</label>
                 <select id="gamepad-${i}" class="gamepad-select">
-                    <option value="">Keyboard</option>
+                    <option value="">${t('keyboard')}</option>
                 </select>
             `;
             playerDiv.appendChild(gamepadDiv);
@@ -2473,7 +2663,7 @@ class UIManager {
         }
         
         if (colorConflicts.length > 0) {
-            this.showStyledMessage('Color Conflict', colorConflicts.join('\n') + '\n\nPlease choose unique colors for each player.', 'warning');
+            this.showStyledMessage(t('colorConflict'), colorConflicts.join('\n') + '\n\n' + t('colorConflictMsg'), 'warning');
             return;
         }
 
@@ -2513,13 +2703,13 @@ class UIManager {
         // Find conflicts
         keyUsage.forEach((usages, key) => {
             if (usages.length > 1) {
-                const description = usages.map(u => `Player ${u.player} (${u.action})`).join(', ');
+                const description = usages.map(u => `Player ${u.player} (${t(u.action)})`).join(', ');
                 keyConflicts.push(`Key "${formatKeyLabel(key)}" is used by: ${description}`);
             }
         });
         
         if (keyConflicts.length > 0) {
-            this.showStyledMessage('Key Binding Conflict', keyConflicts.join('\n') + '\n\nPlease assign unique keys for each action.', 'warning');
+            this.showStyledMessage(t('keyBindingConflict'), keyConflicts.join('\n') + '\n\n' + t('keyBindingConflictMsg'), 'warning');
             return;
         }
 
@@ -2545,7 +2735,7 @@ class UIManager {
         });
         
         if (gamepadConflicts.length > 0) {
-            this.showStyledMessage('Gamepad Conflict', gamepadConflicts.join('\n') + '\n\nEach gamepad can only be assigned to one player.', 'warning');
+            this.showStyledMessage(t('gamepadConflict'), gamepadConflicts.join('\n') + '\n\n' + t('gamepadConflictMsg'), 'warning');
             return;
         }
 
@@ -2589,7 +2779,7 @@ class UIManager {
         localStorage.removeItem('blockies-gamepad-assignments');
         
         // Show success message
-        this.showStyledMessage('Settings Reset', 'All settings have been reset to default values!', 'success');
+        this.showStyledMessage(t('settingsReset'), t('settingsResetMsg'), 'success');
         
         // Refresh the settings display
         setTimeout(() => {
@@ -2605,6 +2795,17 @@ class UIManager {
 
 // Initialize the game
 function init() {
+    // Load language preference
+    const savedLanguage = localStorage.getItem('blockies-language');
+    if (savedLanguage && TRANSLATIONS[savedLanguage]) {
+        currentLanguage = savedLanguage;
+        const langSelector = document.getElementById('language-selector');
+        if (langSelector) {
+            langSelector.value = savedLanguage;
+        }
+    }
+    updateUILanguage();
+    
     // Load settings from localStorage
     const savedSettings = localStorage.getItem('blockies-settings');
     if (savedSettings) {
