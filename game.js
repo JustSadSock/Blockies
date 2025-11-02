@@ -1075,7 +1075,7 @@ class UIManager {
         const gameScreen = this.screens.gameScreen;
         if (!gameScreen) return;
 
-        const compact = window.innerWidth < 1100 || window.innerHeight < 820;
+        const compact = window.innerWidth < 980 || window.innerHeight < 720;
         gameScreen.classList.toggle('compact', compact);
     }
 
@@ -1143,7 +1143,9 @@ class UIManager {
         if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
             availableHeight = window.innerHeight * 0.35;
         }
-        availableHeight = Math.max(60, availableHeight);
+
+        const minimumBoardSlot = window.innerHeight * 0.56;
+        availableHeight = Math.max(60, availableHeight, minimumBoardSlot);
 
         const widthScale = availableWidth / boardWidth;
         const heightScale = availableHeight / boardHeight;
