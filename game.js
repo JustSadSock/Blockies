@@ -1,8 +1,13 @@
 // Game Configuration
 const BLOCK_SIZE = 25;
-const BOARD_WIDTH = 10;
+const BASE_BOARD_WIDTH = 10;
 const BOARD_HEIGHT = 20;
+const ADDITIONAL_COLUMNS_PER_PLAYER = 4;
 const PREVIEW_SIZE = 4;
+
+const BASE_LINE_SCORE = 100;
+const STREAK_BONUS_STEP = 0.1;
+const MULTI_LINE_BONUS_STEP = 0.2;
 
 // Tetromino shapes
 const SHAPES = {
@@ -18,33 +23,138 @@ const SHAPES = {
 // Default colors for players
 const DEFAULT_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD93D', '#95E1D3'];
 
-// Default key bindings for players
+// Default key bindings for players (keyboard layout agnostic using code values)
 const DEFAULT_KEYS = [
-    { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown', rotate: 'ArrowUp', drop: ' ' },
-    { left: 'a', right: 'd', down: 's', rotate: 'w', drop: 'q' },
-    { left: 'j', right: 'l', down: 'k', rotate: 'i', drop: 'u' },
-    { left: 'f', right: 'h', down: 'g', rotate: 't', drop: 'r' }
+    { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown', rotate: 'ArrowUp', drop: 'Space' },
+    { left: 'KeyA', right: 'KeyD', down: 'KeyS', rotate: 'KeyW', drop: 'KeyQ' },
+    { left: 'KeyJ', right: 'KeyL', down: 'KeyK', rotate: 'KeyI', drop: 'KeyU' },
+    { left: 'KeyF', right: 'KeyH', down: 'KeyG', rotate: 'KeyT', drop: 'KeyR' }
 ];
+
+const TEAM_SCORE_TEMPLATE = {
+    score: 0,
+    lines: 0,
+    level: 1,
+    comboChain: 0,
+    lastClearDetail: null
+};
+
+function computeBoardWidth(numPlayers) {
+    const players = Math.max(1, numPlayers || 1);
+    return BASE_BOARD_WIDTH + (players - 1) * ADDITIONAL_COLUMNS_PER_PLAYER;
+}
+
+function getBoardWidth() {
+    return gameState.boardWidth || BASE_BOARD_WIDTH;
+}
+
+function createEmptyBoard(width = getBoardWidth(), height = BOARD_HEIGHT) {
+    return Array.from({ length: height }, () => Array(width).fill(0));
+}
 
 // Game State
 let gameState = {
     players: [],
     numPlayers: 1,
+    board: [],
+    lastTime: 0,
     isPaused: false,
     isGameOver: false,
+    boardWidth: BASE_BOARD_WIDTH,
+    sharedStats: { ...TEAM_SCORE_TEMPLATE },
+    sharedStatsDirty: false,
+    inputStates: new Map(),
     settings: {
         colors: [...DEFAULT_COLORS],
         keys: JSON.parse(JSON.stringify(DEFAULT_KEYS))
     }
 };
 
+function resetSharedStats() {
+    gameState.sharedStats = { ...TEAM_SCORE_TEMPLATE };
+    gameState.sharedStatsDirty = true;
+}
+
+function formatKeyLabel(code) {
+    if (!code) return '';
+
+    const arrowMap = {
+        ArrowLeft: '←',
+        ArrowRight: '→',
+        ArrowUp: '↑',
+        ArrowDown: '↓'
+    };
+
+    if (arrowMap[code]) {
+        return arrowMap[code];
+    }
+
+    if (code === 'Space') {
+        return 'Space';
+    }
+
+    if (code.startsWith('Key')) {
+        return code.replace('Key', '');
+    }
+
+    if (code.startsWith('Digit')) {
+        return code.replace('Digit', '');
+    }
+
+    return code;
+}
+
+function normalizeKeyCode(value) {
+    if (!value) return '';
+
+    if (value === ' ') {
+        return 'Space';
+    }
+
+    if (/^Arrow(Left|Right|Up|Down)$/.test(value)) {
+        return value;
+    }
+
+    if (/^Key[A-Z]$/.test(value)) {
+        return value;
+    }
+
+    if (/^Digit[0-9]$/.test(value)) {
+        return value;
+    }
+
+    if (value.length === 1) {
+        const upper = value.toUpperCase();
+        if (upper >= 'A' && upper <= 'Z') {
+            return `Key${upper}`;
+        }
+
+        if (/^[0-9]$/.test(value)) {
+            return `Digit${value}`;
+        }
+    }
+
+    return value;
+}
+
+function formatNumber(value) {
+    return Number(value || 0).toLocaleString('en-US');
+}
+
+function createActionState() {
+    return {
+        active: false,
+        heldTime: 0,
+        hasFiredInitial: false
+    };
+}
+
 // Player Class
 class Player {
-    constructor(id, color, keys) {
+    constructor(id, color, keys, spawnAnchor) {
         this.id = id;
         this.color = color;
         this.keys = keys;
-        this.board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
         this.score = 0;
         this.level = 1;
         this.lines = 0;
@@ -55,6 +165,7 @@ class Player {
         this.dropCounter = 0;
         this.dropInterval = 1000;
         this.lastTime = 0;
+        this.spawnAnchor = typeof spawnAnchor === 'number' ? spawnAnchor : getBoardWidth() / 2;
     }
 
     init() {
@@ -71,40 +182,93 @@ class Player {
     spawnPiece() {
         this.currentPiece = this.nextPiece;
         this.nextPiece = this.randomPiece();
-        this.position = {
-            x: Math.floor(BOARD_WIDTH / 2) - Math.floor(this.currentPiece[0].length / 2),
-            y: 0
-        };
+        const pieceWidth = this.currentPiece[0].length;
+        const boardWidth = getBoardWidth();
+        const preferredX = Math.min(
+            boardWidth - pieceWidth,
+            Math.max(0, Math.round(this.spawnAnchor - pieceWidth / 2))
+        );
 
-        if (this.collides()) {
-            this.gameOver = true;
-            gameState.isGameOver = true;
+        let spawnPosition = null;
+        const checked = new Set();
+
+        for (let offset = 0; offset < boardWidth; offset++) {
+            const candidates = [];
+            if (offset === 0) {
+                candidates.push(preferredX);
+            } else {
+                const left = preferredX - offset;
+                const right = preferredX + offset;
+
+                if (left >= 0) candidates.push(left);
+                if (right <= boardWidth - pieceWidth) candidates.push(right);
+            }
+
+            for (const candidate of candidates) {
+                if (checked.has(candidate)) continue;
+                checked.add(candidate);
+
+                if (!this.checkCollision(this.currentPiece, { x: candidate, y: 0 }).collides) {
+                    spawnPosition = { x: candidate, y: 0 };
+                    break;
+                }
+            }
+
+            if (spawnPosition) break;
         }
+
+        this.position = spawnPosition || { x: preferredX, y: 0 };
+
+        if (!spawnPosition && this.checkCollision().collides) {
+            this.gameOver = true;
+            checkAllPlayersGameOver();
+        }
+
+        this.dropCounter = 0;
     }
 
-    collides(piece = this.currentPiece, pos = this.position) {
+    checkCollision(piece = this.currentPiece, pos = this.position) {
+        const result = {
+            collides: false,
+            withLocked: false,
+            withActive: false
+        };
+
         for (let y = 0; y < piece.length; y++) {
             for (let x = 0; x < piece[y].length; x++) {
-                if (piece[y][x]) {
-                    const boardX = pos.x + x;
-                    const boardY = pos.y + y;
-                    
-                    if (boardX < 0 || boardX >= BOARD_WIDTH || boardY >= BOARD_HEIGHT) {
-                        return true;
-                    }
-                    
-                    if (boardY >= 0 && this.board[boardY][boardX]) {
-                        return true;
-                    }
+                if (!piece[y][x]) continue;
+
+                const boardX = pos.x + x;
+                const boardY = pos.y + y;
+                const boardWidth = getBoardWidth();
+
+                if (boardX < 0 || boardX >= boardWidth || boardY >= BOARD_HEIGHT) {
+                    result.collides = true;
+                    result.withLocked = true;
+                    return result;
+                }
+
+                if (boardY < 0) continue;
+
+                if (gameState.board[boardY][boardX]) {
+                    result.collides = true;
+                    result.withLocked = true;
+                    return result;
+                }
+
+                if (isCellOccupiedByOtherPiece(boardX, boardY, this.id)) {
+                    result.collides = true;
+                    result.withActive = true;
                 }
             }
         }
-        return false;
+
+        return result;
     }
 
     move(dir) {
         this.position.x += dir;
-        if (this.collides()) {
+        if (this.checkCollision().collides) {
             this.position.x -= dir;
         }
     }
@@ -114,32 +278,52 @@ class Player {
             this.currentPiece.map(row => row[i]).reverse()
         );
 
-        if (!this.collides(rotated)) {
+        if (!this.checkCollision(rotated).collides) {
             this.currentPiece = rotated;
         }
     }
 
     drop() {
         this.position.y++;
-        if (this.collides()) {
+        const collision = this.checkCollision();
+        if (collision.collides) {
             this.position.y--;
-            this.merge();
-            this.clearLines();
-            this.spawnPiece();
+            if (collision.withLocked) {
+                this.merge();
+                this.clearLines();
+                this.spawnPiece();
+            }
         }
         this.dropCounter = 0;
     }
 
     hardDrop() {
         let maxDrops = BOARD_HEIGHT; // Safety limit
-        while (!this.collides() && maxDrops > 0) {
+        let landedOnLocked = false;
+
+        while (maxDrops > 0) {
             this.position.y++;
             maxDrops--;
+
+            const collision = this.checkCollision();
+            if (!collision.collides) {
+                continue;
+            }
+
+            if (collision.withLocked) {
+                landedOnLocked = true;
+            }
+
+            this.position.y--;
+            break;
         }
-        this.position.y--;
-        this.merge();
-        this.clearLines();
-        this.spawnPiece();
+
+        if (landedOnLocked) {
+            this.merge();
+            this.clearLines();
+            this.spawnPiece();
+        }
+        this.dropCounter = 0;
     }
 
     merge() {
@@ -149,7 +333,7 @@ class Player {
                     const boardY = this.position.y + y;
                     const boardX = this.position.x + x;
                     if (boardY >= 0) {
-                        this.board[boardY][boardX] = 1;
+                        gameState.board[boardY][boardX] = this.id + 1;
                     }
                 }
             }
@@ -158,22 +342,63 @@ class Player {
 
     clearLines() {
         let linesCleared = 0;
-        
+
+        const boardWidth = getBoardWidth();
         for (let y = BOARD_HEIGHT - 1; y >= 0; y--) {
-            if (this.board[y].every(cell => cell === 1)) {
-                this.board.splice(y, 1);
-                this.board.unshift(Array(BOARD_WIDTH).fill(0));
+            if (gameState.board[y].every(cell => cell !== 0)) {
+                gameState.board.splice(y, 1);
+                gameState.board.unshift(Array(boardWidth).fill(0));
                 linesCleared++;
                 y++; // Check the same row again
             }
         }
 
-        if (linesCleared > 0) {
-            this.lines += linesCleared;
-            this.score += [0, 100, 300, 500, 800][linesCleared] * this.level;
-            this.level = Math.floor(this.lines / 10) + 1;
-            this.dropInterval = Math.max(100, 1000 - (this.level - 1) * 100);
+        if (linesCleared === 0) {
+            if (gameState.sharedStats.comboChain !== 0) {
+                gameState.sharedStats.comboChain = 0;
+                gameState.sharedStatsDirty = true;
+            }
+            gameState.sharedStats.lastClearDetail = null;
+            return;
         }
+
+        const comboStep = gameState.sharedStats.comboChain || 0;
+        const comboMultiplier = 1 + STREAK_BONUS_STEP * comboStep;
+        const multiMultiplier = 1 + MULTI_LINE_BONUS_STEP * (linesCleared - 1);
+        const perLineScore = Math.round(BASE_LINE_SCORE * comboMultiplier * multiMultiplier);
+        const gained = perLineScore * linesCleared;
+
+        const streakBonusPercent = Math.round((comboMultiplier - 1) * 100);
+        const multiBonusPercent = Math.round((multiMultiplier - 1) * 100);
+
+        gameState.sharedStats.lines += linesCleared;
+        gameState.sharedStats.score += gained;
+        gameState.sharedStats.level = Math.floor(gameState.sharedStats.lines / 10) + 1;
+        gameState.sharedStats.comboChain = comboStep + 1;
+        gameState.sharedStats.lastClearDetail = {
+            linesCleared,
+            totalScore: gained,
+            perLineScore,
+            basePerLine: BASE_LINE_SCORE,
+            comboChain: gameState.sharedStats.comboChain,
+            comboMultiplier,
+            multiMultiplier,
+            streakBonusPercent,
+            multiBonusPercent
+        };
+
+        this.lines = gameState.sharedStats.lines;
+        this.score = gameState.sharedStats.score;
+        this.level = gameState.sharedStats.level;
+
+        gameState.players.forEach(player => {
+            player.dropInterval = Math.max(100, player.dropInterval * Math.pow(0.95, linesCleared));
+            player.lines = gameState.sharedStats.lines;
+            player.score = gameState.sharedStats.score;
+            player.level = gameState.sharedStats.level;
+        });
+
+        gameState.sharedStatsDirty = true;
     }
 
     update(deltaTime) {
@@ -183,6 +408,36 @@ class Player {
         if (this.dropCounter > this.dropInterval) {
             this.drop();
         }
+    }
+}
+
+function isCellOccupiedByOtherPiece(x, y, currentPlayerId) {
+    return gameState.players.some(player => {
+        if (player.id === currentPlayerId || player.gameOver || !player.currentPiece) {
+            return false;
+        }
+
+        for (let py = 0; py < player.currentPiece.length; py++) {
+            for (let px = 0; px < player.currentPiece[py].length; px++) {
+                if (!player.currentPiece[py][px]) continue;
+                const boardX = player.position.x + px;
+                const boardY = player.position.y + py;
+
+                if (boardX === x && boardY === y) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    });
+}
+
+function checkAllPlayersGameOver() {
+    if (!gameState.players.length) return;
+
+    if (gameState.players.every(player => player.gameOver)) {
+        gameState.isGameOver = true;
     }
 }
 
@@ -200,7 +455,26 @@ class UIManager {
             gameOver: document.getElementById('gameover-menu')
         };
 
+        this.touchControls = document.getElementById('touch-controls');
+        this.touchStatus = document.getElementById('touch-status');
+        this.touchPlayerIndex = 0;
+        this.teamStats = document.getElementById('team-stats');
+        this.scoreCard = document.getElementById('team-score-card');
+        this.comboIndicator = document.getElementById('combo-indicator');
+        this.comboLabel = document.getElementById('combo-label');
+        this.comboBonus = document.getElementById('combo-bonus');
+        this.clearFeed = document.getElementById('clear-feed');
+        this.gameControls = document.querySelector('.game-controls');
+        this.pendingScaleFrame = null;
+        this.lastComboChain = 0;
+
+        this.moveRepeatInterval = 90;
+        this.softDropInitialDelay = 0;
+        this.softDropRepeatInterval = 55;
+
         this.setupEventListeners();
+        this.initTouchControls();
+        window.addEventListener('resize', () => this.handleResize());
     }
 
     setupEventListeners() {
@@ -230,11 +504,153 @@ class UIManager {
 
         // Keyboard input
         document.addEventListener('keydown', (e) => this.handleKeyPress(e));
+        document.addEventListener('keyup', (e) => this.handleKeyRelease(e));
+    }
+
+    initTouchControls() {
+        if (!this.touchControls) return;
+
+        const buttons = this.touchControls.querySelectorAll('[data-action]');
+        buttons.forEach(button => {
+            const action = button.dataset.action;
+            if (!action) return;
+
+            const handler = (event) => {
+                event.preventDefault();
+                this.handleTouchAction(action);
+            };
+
+            if (window.PointerEvent) {
+                button.addEventListener('pointerdown', handler);
+            } else {
+                button.addEventListener('touchstart', handler, { passive: false });
+                button.addEventListener('mousedown', handler);
+            }
+
+            button.addEventListener('click', (event) => {
+                if (event.detail === 0) {
+                    handler(event);
+                }
+            });
+            button.addEventListener('contextmenu', (event) => event.preventDefault());
+        });
+
+        if (this.touchStatus) {
+            this.touchStatus.textContent = 'Start a game to use touch controls';
+        }
+    }
+
+    refreshTouchStatus() {
+        if (!this.touchControls || !this.touchStatus) return;
+
+        const activePlayer = this.getTouchPlayer();
+        if (activePlayer && !gameState.isGameOver) {
+            this.touchStatus.textContent = `Touch controls: Player ${activePlayer.id + 1}`;
+        } else if (gameState.players.length && gameState.players.every(player => player.gameOver)) {
+            this.touchStatus.textContent = 'All players have finished';
+        } else {
+            this.touchStatus.textContent = 'Start a game to use touch controls';
+        }
+    }
+
+    getTouchPlayer() {
+        if (!gameState.players.length) {
+            return null;
+        }
+
+        const current = gameState.players[this.touchPlayerIndex];
+        if (current && !current.gameOver) {
+            return current;
+        }
+
+        const fallback = gameState.players.find(player => !player.gameOver);
+        if (fallback) {
+            this.touchPlayerIndex = fallback.id;
+            return fallback;
+        }
+
+        return null;
+    }
+
+    handleTouchAction(action) {
+        if (gameState.isPaused || gameState.isGameOver) {
+            return;
+        }
+
+        const player = this.getTouchPlayer();
+        if (!player) {
+            this.refreshTouchStatus();
+            return;
+        }
+
+        let requiresInfoUpdate = false;
+
+        switch (action) {
+            case 'left':
+                player.move(-1);
+                break;
+            case 'right':
+                player.move(1);
+                break;
+            case 'down':
+                player.drop();
+                requiresInfoUpdate = true;
+                break;
+            case 'rotate':
+                player.rotate();
+                break;
+            case 'drop':
+                player.hardDrop();
+                requiresInfoUpdate = true;
+                break;
+            default:
+                break;
+        }
+
+        if (requiresInfoUpdate) {
+            this.updatePlayerInfo(player);
+            this.drawNextPiece(player);
+        }
+
+        this.drawBoard();
+        this.updateTeamStatsIfNeeded();
+
+        if (player.gameOver) {
+            this.refreshTouchStatus();
+        }
     }
 
     showScreen(screenName) {
         Object.values(this.screens).forEach(screen => screen.classList.remove('active'));
         this.screens[screenName].classList.add('active');
+
+        if (screenName === 'gameScreen') {
+            this.updateLayoutDensity();
+            this.scheduleBoardScaleUpdate();
+        }
+
+        const teamStats = document.getElementById('team-stats');
+        if (teamStats) {
+            if (screenName === 'gameScreen') {
+                teamStats.classList.add('visible');
+                this.updateTeamStats();
+            } else {
+                teamStats.classList.remove('visible');
+                this.resetTeamStatsDisplay();
+            }
+        }
+
+        if (this.touchControls) {
+            if (screenName === 'gameScreen') {
+                this.touchControls.classList.add('visible');
+                this.refreshTouchStatus();
+            } else {
+                this.touchControls.classList.remove('visible');
+                if (this.touchStatus) {
+                    this.touchStatus.textContent = 'Start a game to use touch controls';
+                }
+            }
+        }
     }
 
     showModal(modalName) {
@@ -250,68 +666,111 @@ class UIManager {
         gameState.isPaused = false;
         gameState.isGameOver = false;
         gameState.players = [];
+        gameState.boardWidth = computeBoardWidth(numPlayers);
+        gameState.board = createEmptyBoard(gameState.boardWidth, BOARD_HEIGHT);
+        gameState.lastTime = 0;
+        this.touchPlayerIndex = 0;
+        gameState.inputStates = new Map();
+        resetSharedStats();
 
         const container = document.getElementById('game-container');
         container.innerHTML = '';
 
+        if (this.clearFeed) {
+            this.clearFeed.innerHTML = '';
+        }
+        this.lastComboChain = 0;
+        this.updateComboIndicator();
+
+        const boardWrapper = document.createElement('div');
+        boardWrapper.id = 'shared-board';
+
+        const canvas = document.createElement('canvas');
+        canvas.id = 'game-canvas';
+        canvas.width = gameState.boardWidth * BLOCK_SIZE;
+        canvas.height = BOARD_HEIGHT * BLOCK_SIZE;
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
+        canvas.style.maxWidth = `${canvas.width}px`;
+        canvas.style.maxHeight = `${canvas.height}px`;
+        boardWrapper.style.setProperty('--board-max-width', `${canvas.width}px`);
+        boardWrapper.appendChild(canvas);
+
+        const previewsWrapper = document.createElement('div');
+        previewsWrapper.id = 'player-previews';
+
+        container.appendChild(boardWrapper);
+        container.appendChild(previewsWrapper);
+
         for (let i = 0; i < numPlayers; i++) {
+            const spawnAnchor = ((i + 1) / (numPlayers + 1)) * gameState.boardWidth;
             const player = new Player(
                 i,
                 gameState.settings.colors[i],
-                gameState.settings.keys[i]
+                gameState.settings.keys[i],
+                spawnAnchor
             );
             player.init();
+            player.score = gameState.sharedStats.score;
+            player.level = gameState.sharedStats.level;
+            player.lines = gameState.sharedStats.lines;
             gameState.players.push(player);
+            gameState.inputStates.set(player.id, {
+                left: createActionState(),
+                right: createActionState(),
+                down: createActionState()
+            });
 
-            this.createPlayerBoard(player, container);
+            this.createPlayerInfo(player, previewsWrapper);
+            this.updatePlayerInfo(player);
+            this.drawNextPiece(player);
         }
 
+
+        this.drawBoard();
+
         this.showScreen('gameScreen');
+        this.refreshTouchStatus();
+        this.scheduleBoardScaleUpdate();
         requestAnimationFrame((time) => this.gameLoop(time));
     }
 
-    createPlayerBoard(player, container) {
-        const boardDiv = document.createElement('div');
-        boardDiv.className = 'player-board';
-        boardDiv.id = `player-${player.id}`;
+    createPlayerInfo(player, container) {
+        const preview = document.createElement('div');
+        preview.className = 'player-preview';
+        preview.id = `player-${player.id}`;
 
         const header = document.createElement('div');
-        header.className = 'player-header';
-        header.style.background = player.color;
-        header.style.color = 'white';
-        header.textContent = `Player ${player.id + 1}`;
-
-        const info = document.createElement('div');
-        info.className = 'player-info';
-        info.innerHTML = `
-            <div class="score">Score: <span id="score-${player.id}">0</span></div>
-            <div class="level">Level: <span id="level-${player.id}">1</span></div>
-            <div class="lines">Lines: <span id="lines-${player.id}">0</span></div>
+        header.className = 'preview-header';
+        header.style.setProperty('--player-color', player.color);
+        header.innerHTML = `
+            <span class="preview-badge" style="background:${player.color}"></span>
+            Player ${player.id + 1}
         `;
 
-        const canvas = document.createElement('canvas');
-        canvas.id = `canvas-${player.id}`;
-        canvas.width = BOARD_WIDTH * BLOCK_SIZE;
-        canvas.height = BOARD_HEIGHT * BLOCK_SIZE;
+        const status = document.createElement('div');
+        status.className = 'preview-status';
+        status.id = `status-${player.id}`;
+        status.textContent = 'In play';
 
         const nextDiv = document.createElement('div');
         nextDiv.className = 'next-piece';
-        nextDiv.innerHTML = '<div>Next:</div>';
+        nextDiv.innerHTML = '<span class="next-label">Next</span>';
         const nextCanvas = document.createElement('canvas');
         nextCanvas.id = `next-${player.id}`;
         nextCanvas.width = PREVIEW_SIZE * BLOCK_SIZE;
         nextCanvas.height = PREVIEW_SIZE * BLOCK_SIZE;
         nextDiv.appendChild(nextCanvas);
 
-        boardDiv.appendChild(header);
-        boardDiv.appendChild(info);
-        boardDiv.appendChild(canvas);
-        boardDiv.appendChild(nextDiv);
-        container.appendChild(boardDiv);
+        preview.appendChild(header);
+        preview.appendChild(status);
+        preview.appendChild(nextDiv);
+        container.appendChild(preview);
     }
 
     gameLoop(time) {
         if (gameState.isGameOver) {
+            this.refreshTouchStatus();
             this.showGameOver();
             return;
         }
@@ -320,34 +779,51 @@ class UIManager {
             const deltaTime = time - (gameState.lastTime || time);
             gameState.lastTime = time;
 
+            let touchStatusNeedsUpdate = false;
             gameState.players.forEach(player => {
+                const wasGameOver = player.gameOver;
+
                 if (!player.gameOver) {
                     player.update(deltaTime);
-                    this.drawPlayer(player);
+                    this.applyContinuousInputs(player, deltaTime);
                     this.updatePlayerInfo(player);
+                    this.drawNextPiece(player);
+                }
+
+                if (!wasGameOver && player.gameOver) {
+                    touchStatusNeedsUpdate = true;
                 }
             });
+
+            this.drawBoard();
+            this.updateTeamStatsIfNeeded();
+
+            if (touchStatusNeedsUpdate) {
+                this.refreshTouchStatus();
+            }
         }
 
         requestAnimationFrame((time) => this.gameLoop(time));
     }
 
-    drawPlayer(player) {
-        const canvas = document.getElementById(`canvas-${player.id}`);
-        const ctx = canvas.getContext('2d');
+    drawBoard() {
+        const canvas = document.getElementById('game-canvas');
+        if (!canvas) return;
 
-        // Clear canvas
+        const ctx = canvas.getContext('2d');
+        const boardWidth = getBoardWidth();
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw board
         for (let y = 0; y < BOARD_HEIGHT; y++) {
-            for (let x = 0; x < BOARD_WIDTH; x++) {
-                if (player.board[y][x]) {
-                    ctx.fillStyle = player.color;
+            for (let x = 0; x < boardWidth; x++) {
+                const occupant = gameState.board[y][x];
+                if (occupant) {
+                    const player = gameState.players[occupant - 1];
+                    const color = player ? player.color : '#333';
+                    ctx.fillStyle = color;
                     ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
-                    
-                    // Add cute border effect
+
                     ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x * BLOCK_SIZE + 1, y * BLOCK_SIZE + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
@@ -355,8 +831,9 @@ class UIManager {
             }
         }
 
-        // Draw current piece
-        if (player.currentPiece) {
+        gameState.players.forEach(player => {
+            if (!player.currentPiece || player.gameOver) return;
+
             ctx.fillStyle = player.color;
             for (let y = 0; y < player.currentPiece.length; y++) {
                 for (let x = 0; x < player.currentPiece[y].length; x++) {
@@ -364,17 +841,20 @@ class UIManager {
                         const drawX = (player.position.x + x) * BLOCK_SIZE;
                         const drawY = (player.position.y + y) * BLOCK_SIZE;
                         ctx.fillRect(drawX, drawY, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
-                        
+
                         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                         ctx.lineWidth = 2;
                         ctx.strokeRect(drawX + 1, drawY + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
                     }
                 }
             }
-        }
+        });
+    }
 
-        // Draw next piece
+    drawNextPiece(player) {
         const nextCanvas = document.getElementById(`next-${player.id}`);
+        if (!nextCanvas) return;
+
         const nextCtx = nextCanvas.getContext('2d');
         nextCtx.fillStyle = '#fff';
         nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
@@ -390,7 +870,7 @@ class UIManager {
                         const drawX = (offsetX + x) * BLOCK_SIZE;
                         const drawY = (offsetY + y) * BLOCK_SIZE;
                         nextCtx.fillRect(drawX, drawY, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
-                        
+
                         nextCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                         nextCtx.lineWidth = 2;
                         nextCtx.strokeRect(drawX + 1, drawY + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
@@ -401,44 +881,482 @@ class UIManager {
     }
 
     updatePlayerInfo(player) {
-        document.getElementById(`score-${player.id}`).textContent = player.score;
-        document.getElementById(`level-${player.id}`).textContent = player.level;
-        document.getElementById(`lines-${player.id}`).textContent = player.lines;
+        const statusEl = document.getElementById(`status-${player.id}`);
+        if (!statusEl) return;
+
+        if (player.gameOver) {
+            statusEl.textContent = 'Out';
+            statusEl.classList.add('is-out');
+        } else {
+            statusEl.textContent = 'In play';
+            statusEl.classList.remove('is-out');
+        }
+    }
+
+    updateTeamStats() {
+        const { score, level, lines } = gameState.sharedStats;
+        const scoreEl = document.getElementById('team-score');
+        const levelEl = document.getElementById('team-level');
+        const linesEl = document.getElementById('team-lines');
+
+        if (scoreEl) scoreEl.textContent = formatNumber(score);
+        if (levelEl) levelEl.textContent = `Level ${formatNumber(level)}`;
+        if (linesEl) linesEl.textContent = `${formatNumber(lines)} lines`;
+
+        this.updateComboIndicator();
+        this.scheduleBoardScaleUpdate();
+    }
+
+    resetTeamStatsDisplay() {
+        const scoreEl = document.getElementById('team-score');
+        const levelEl = document.getElementById('team-level');
+        const linesEl = document.getElementById('team-lines');
+
+        if (scoreEl) scoreEl.textContent = '0';
+        if (levelEl) levelEl.textContent = 'Level 1';
+        if (linesEl) linesEl.textContent = '0 lines';
+
+        if (this.comboIndicator) {
+            this.comboIndicator.classList.remove('visible');
+        }
+        if (this.clearFeed) {
+            this.clearFeed.innerHTML = '';
+        }
+        if (this.scoreCard) {
+            this.scoreCard.classList.remove('score-card--pulse');
+        }
+        this.lastComboChain = 0;
+    }
+
+    updateTeamStatsIfNeeded() {
+        if (!gameState.sharedStatsDirty) {
+            return;
+        }
+
+        this.updateTeamStats();
+
+        const detail = gameState.sharedStats.lastClearDetail;
+        if (detail) {
+            this.showLineClearCelebration(detail);
+            gameState.sharedStats.lastClearDetail = null;
+        }
+
+        gameState.sharedStatsDirty = false;
+    }
+
+    updateComboIndicator() {
+        if (!this.comboIndicator) return;
+
+        const chain = gameState.sharedStats.comboChain || 0;
+        if (chain > 1) {
+            this.comboIndicator.classList.add('visible');
+            if (this.comboLabel) {
+                this.comboLabel.textContent = `Combo x${chain}`;
+            }
+            if (this.comboBonus) {
+                const bonusPercent = (chain - 1) * 10;
+                this.comboBonus.textContent = `+${bonusPercent}% streak`;
+            }
+
+            if (chain !== this.lastComboChain) {
+                this.comboIndicator.classList.remove('combo-burst');
+                void this.comboIndicator.offsetWidth;
+                this.comboIndicator.classList.add('combo-burst');
+            }
+        } else {
+            this.comboIndicator.classList.remove('visible');
+            this.comboIndicator.classList.remove('combo-burst');
+            if (this.comboLabel) {
+                this.comboLabel.textContent = 'Combo ready';
+            }
+            if (this.comboBonus) {
+                this.comboBonus.textContent = '';
+            }
+        }
+
+        this.lastComboChain = chain;
+        this.scheduleBoardScaleUpdate();
+    }
+
+    flashScoreCard() {
+        if (!this.scoreCard) return;
+
+        this.scoreCard.classList.remove('score-card--pulse');
+        void this.scoreCard.offsetWidth;
+        this.scoreCard.classList.add('score-card--pulse');
+    }
+
+    getLineClearTitle(linesCleared) {
+        switch (linesCleared) {
+            case 1:
+                return 'Line break';
+            case 2:
+                return 'Double break';
+            case 3:
+                return 'Triple break';
+            default:
+                return 'Mega clear';
+        }
+    }
+
+    showLineClearCelebration(detail) {
+        this.flashScoreCard();
+
+        if (!this.clearFeed) return;
+
+        const entry = document.createElement('div');
+        entry.className = 'clear-event';
+
+        const title = document.createElement('div');
+        title.className = 'clear-event__title';
+        title.textContent = this.getLineClearTitle(detail.linesCleared);
+        entry.appendChild(title);
+
+        const points = document.createElement('div');
+        points.className = 'clear-event__points';
+        points.textContent = `+${formatNumber(detail.totalScore)} pts`;
+        entry.appendChild(points);
+
+        const perLine = document.createElement('div');
+        perLine.className = 'clear-event__per-line';
+        perLine.textContent = `${formatNumber(detail.perLineScore)} pts / line`;
+        entry.appendChild(perLine);
+
+        const bonusChips = [];
+        if (detail.multiMultiplier > 1) {
+            bonusChips.push(`Multi +${detail.multiBonusPercent}%`);
+        }
+        if (detail.comboMultiplier > 1) {
+            bonusChips.push(`Streak +${detail.streakBonusPercent}%`);
+        }
+
+        if (bonusChips.length) {
+            const bonusRow = document.createElement('div');
+            bonusRow.className = 'clear-event__bonuses';
+            bonusChips.forEach(text => {
+                const chip = document.createElement('span');
+                chip.textContent = text;
+                bonusRow.appendChild(chip);
+            });
+            entry.appendChild(bonusRow);
+        }
+
+        this.clearFeed.appendChild(entry);
+
+        while (this.clearFeed.children.length > 4) {
+            this.clearFeed.removeChild(this.clearFeed.firstChild);
+        }
+
+        requestAnimationFrame(() => {
+            entry.classList.add('visible');
+        });
+
+        setTimeout(() => {
+            entry.classList.add('clear-event--fade');
+            setTimeout(() => {
+                entry.remove();
+                this.scheduleBoardScaleUpdate();
+            }, 600);
+        }, 3600);
+
+        this.scheduleBoardScaleUpdate();
+    }
+
+    handleResize() {
+        if (!this.screens.gameScreen.classList.contains('active')) {
+            return;
+        }
+
+        this.updateLayoutDensity();
+        this.updateBoardScale();
+    }
+
+    updateLayoutDensity() {
+        const gameScreen = this.screens.gameScreen;
+        if (!gameScreen) return;
+
+        const compact = window.innerWidth < 980 || window.innerHeight < 720;
+        gameScreen.classList.toggle('compact', compact);
+    }
+
+    scheduleBoardScaleUpdate() {
+        if (this.pendingScaleFrame) return;
+
+        this.pendingScaleFrame = requestAnimationFrame(() => {
+            this.pendingScaleFrame = null;
+            this.updateBoardScale();
+        });
+    }
+
+    updateBoardScale() {
+        const canvas = document.getElementById('game-canvas');
+        const boardWrapper = document.getElementById('shared-board');
+        if (!canvas || !boardWrapper) {
+            return;
+        }
+
+        const boardWidth = canvas.width;
+        const boardHeight = canvas.height;
+
+        const parentRect = boardWrapper.parentElement ? boardWrapper.parentElement.getBoundingClientRect() : null;
+        const gameScreenRect = this.screens.gameScreen ? this.screens.gameScreen.getBoundingClientRect() : null;
+        const bodyStyles = window.getComputedStyle(document.body);
+        const horizontalPadding = parseFloat(bodyStyles.paddingLeft) + parseFloat(bodyStyles.paddingRight);
+        const verticalPadding = parseFloat(bodyStyles.paddingTop) + parseFloat(bodyStyles.paddingBottom);
+        const layoutWidth = parentRect ? parentRect.width : (gameScreenRect ? gameScreenRect.width : window.innerWidth);
+        const viewportWidth = window.innerWidth - horizontalPadding;
+        const constrainedViewport = Math.max(160, viewportWidth);
+        const availableWidth = Math.min(layoutWidth, constrainedViewport);
+
+        let usedHeight = verticalPadding;
+        const header = document.querySelector('header');
+        if (header) {
+            usedHeight += header.getBoundingClientRect().height;
+        }
+        const screenStyles = this.screens.gameScreen ? window.getComputedStyle(this.screens.gameScreen) : null;
+        const paddingTop = screenStyles ? parseFloat(screenStyles.paddingTop) : 0;
+        const paddingBottom = screenStyles ? parseFloat(screenStyles.paddingBottom) : 0;
+        const gapY = screenStyles ? parseFloat(screenStyles.rowGap || screenStyles.gap || 0) : 0;
+
+        usedHeight += paddingTop + paddingBottom;
+
+        let gapSegments = 0;
+
+        if (this.teamStats && this.teamStats.classList.contains('visible')) {
+            usedHeight += this.teamStats.getBoundingClientRect().height;
+            gapSegments += 1;
+        }
+
+        if (this.gameControls) {
+            usedHeight += this.gameControls.getBoundingClientRect().height;
+            gapSegments += 1;
+        }
+
+        if (this.touchControls && this.touchControls.classList.contains('visible')) {
+            usedHeight += this.touchControls.getBoundingClientRect().height;
+            gapSegments += 1;
+        }
+
+        usedHeight += gapSegments * gapY;
+
+        let availableHeight = window.innerHeight - usedHeight;
+        if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
+            availableHeight = window.innerHeight * 0.35;
+        }
+
+        const minimumBoardSlot = window.innerHeight * 0.56;
+        availableHeight = Math.max(60, availableHeight, minimumBoardSlot);
+
+        const widthScale = availableWidth / boardWidth;
+        const heightScale = availableHeight / boardHeight;
+        const scale = Math.min(1, widthScale, heightScale);
+
+        const displayWidth = Math.max(1, Math.floor(boardWidth * scale));
+        const displayHeight = Math.max(1, Math.floor(boardHeight * scale));
+
+        boardWrapper.style.setProperty('--board-max-width', `${displayWidth}px`);
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+        canvas.style.maxWidth = `${boardWidth}px`;
+        canvas.style.maxHeight = `${boardHeight}px`;
+    }
+
+    getActionForCode(player, code) {
+        if (!player || !player.keys) return null;
+
+        return Object.keys(player.keys).find(action => player.keys[action] === code) || null;
+    }
+
+    getInputState(playerId, action) {
+        const states = gameState.inputStates.get(playerId);
+        if (!states) return null;
+        return states[action];
+    }
+
+    activateMovementAction(player, action) {
+        const state = this.getInputState(player.id, action);
+        if (!state) return false;
+
+        let moved = false;
+        if (!state.active) {
+            state.active = true;
+            state.heldTime = 0;
+            state.hasFiredInitial = true;
+            player.move(action === 'left' ? -1 : 1);
+            moved = true;
+        }
+
+        return moved;
+    }
+
+    activateSoftDrop(player) {
+        const state = this.getInputState(player.id, 'down');
+        if (!state) return;
+
+        if (!state.active) {
+            state.active = true;
+            state.heldTime = 0;
+            state.hasFiredInitial = false;
+        }
+    }
+
+    releaseContinuousAction(playerId, action) {
+        const state = this.getInputState(playerId, action);
+        if (!state) return;
+
+        state.active = false;
+        state.heldTime = 0;
+        state.hasFiredInitial = false;
+    }
+
+    applyContinuousInputs(player, deltaTime) {
+        const states = gameState.inputStates.get(player.id);
+        if (!states) return;
+
+        const moveRepeat = this.moveRepeatInterval;
+
+        ['left', 'right'].forEach(direction => {
+            const state = states[direction];
+            if (!state) return;
+
+            if (!state.active) {
+                state.heldTime = 0;
+                return;
+            }
+
+            state.heldTime += deltaTime;
+
+            if (!state.hasFiredInitial) {
+                player.move(direction === 'left' ? -1 : 1);
+                state.hasFiredInitial = true;
+                state.heldTime = 0;
+                return;
+            }
+
+            if (state.heldTime >= moveRepeat) {
+                player.move(direction === 'left' ? -1 : 1);
+                state.heldTime = Math.max(0, state.heldTime - moveRepeat);
+            }
+        });
+
+        const downState = states.down;
+        if (!downState) return;
+
+        if (!downState.active) {
+            downState.heldTime = 0;
+            downState.hasFiredInitial = false;
+            return;
+        }
+
+        downState.heldTime += deltaTime;
+
+        const dropInterval = downState.hasFiredInitial ? this.softDropRepeatInterval : this.softDropInitialDelay;
+        if (!downState.hasFiredInitial || downState.heldTime >= dropInterval) {
+            player.drop();
+            downState.hasFiredInitial = true;
+            downState.heldTime = 0;
+        }
     }
 
     handleKeyPress(e) {
-        if (gameState.isPaused || gameState.isGameOver) {
-            if (e.key === 'Escape') {
+        const code = e.code;
+        const isGameActive = this.screens.gameScreen.classList.contains('active') && gameState.players.length;
+
+        if (code === 'Escape') {
+            if (isGameActive && !gameState.isGameOver) {
                 this.togglePause();
             }
+            e.preventDefault();
             return;
         }
+
+        if (!isGameActive || gameState.isPaused || gameState.isGameOver) {
+            return;
+        }
+
+        if (e.repeat) {
+            e.preventDefault();
+            return;
+        }
+
+        let handled = false;
+        const infoUpdates = new Set();
+        let boardNeedsRedraw = false;
 
         gameState.players.forEach(player => {
             if (player.gameOver) return;
 
-            const keys = player.keys;
-            
-            if (e.key === keys.left) {
-                player.move(-1);
-                e.preventDefault();
-            } else if (e.key === keys.right) {
-                player.move(1);
-                e.preventDefault();
-            } else if (e.key === keys.down) {
-                player.drop();
-                e.preventDefault();
-            } else if (e.key === keys.rotate) {
-                player.rotate();
-                e.preventDefault();
-            } else if (e.key === keys.drop) {
-                player.hardDrop();
-                e.preventDefault();
+            const action = this.getActionForCode(player, code);
+            if (!action) return;
+
+            handled = true;
+
+            switch (action) {
+                case 'left':
+                case 'right':
+                    if (this.activateMovementAction(player, action)) {
+                        boardNeedsRedraw = true;
+                    }
+                    break;
+                case 'down':
+                    this.activateSoftDrop(player);
+                    break;
+                case 'rotate':
+                    player.rotate();
+                    boardNeedsRedraw = true;
+                    break;
+                case 'drop':
+                    player.hardDrop();
+                    boardNeedsRedraw = true;
+                    infoUpdates.add(player);
+                    break;
+                default:
+                    break;
             }
         });
 
-        if (e.key === 'Escape') {
-            this.togglePause();
+        if (!handled) {
+            return;
+        }
+
+        e.preventDefault();
+
+        infoUpdates.forEach(player => {
+            this.updatePlayerInfo(player);
+            this.drawNextPiece(player);
+        });
+
+        if (boardNeedsRedraw) {
+            this.drawBoard();
+        }
+
+        this.updateTeamStatsIfNeeded();
+    }
+
+    handleKeyRelease(e) {
+        const code = e.code;
+        const isGameActive = this.screens.gameScreen.classList.contains('active') && gameState.players.length;
+
+        if (!isGameActive) {
+            return;
+        }
+
+        let handled = false;
+
+        gameState.players.forEach(player => {
+            if (player.gameOver) return;
+
+            const action = this.getActionForCode(player, code);
+            if (!action) return;
+
+            if (action === 'left' || action === 'right' || action === 'down') {
+                this.releaseContinuousAction(player.id, action);
+                handled = true;
+            }
+        });
+
+        if (handled) {
+            e.preventDefault();
         }
     }
 
@@ -464,24 +1382,42 @@ class UIManager {
     quitToMenu() {
         this.hideModal('pause');
         this.hideModal('gameOver');
-        gameState.isGameOver = true;
+        gameState.isPaused = false;
+        gameState.isGameOver = false;
+        gameState.players = [];
+        gameState.inputStates = new Map();
+        resetSharedStats();
         this.showScreen('mainMenu');
+        this.refreshTouchStatus();
+
+        const teamStats = document.getElementById('team-stats');
+        if (teamStats) {
+            teamStats.classList.remove('visible');
+            this.resetTeamStatsDisplay();
+        }
     }
 
     showGameOver() {
         const scoresDiv = document.getElementById('final-scores');
         scoresDiv.innerHTML = '';
 
-        const sortedPlayers = [...gameState.players].sort((a, b) => b.score - a.score);
+        const { score, level, lines } = gameState.sharedStats;
 
-        sortedPlayers.forEach((player, index) => {
+        const teamSummary = document.createElement('div');
+        teamSummary.className = 'player-score team-total';
+        teamSummary.innerHTML = `
+            <strong>Team Score:</strong> ${score} points<br>
+            <span>Level ${level} • ${lines} lines cleared</span>
+        `;
+        scoresDiv.appendChild(teamSummary);
+
+        gameState.players.forEach(player => {
             const scoreDiv = document.createElement('div');
             scoreDiv.className = 'player-score';
             scoreDiv.style.background = player.color;
             scoreDiv.style.color = 'white';
-            scoreDiv.innerHTML = `
-                ${index === 0 ? '👑 ' : ''}Player ${player.id + 1}: ${player.score} points
-            `;
+            const status = player.gameOver ? 'Eliminated' : 'Survived';
+            scoreDiv.innerHTML = `Player ${player.id + 1}: ${status}`;
             scoresDiv.appendChild(scoreDiv);
         });
 
@@ -503,9 +1439,10 @@ class UIManager {
             // Color picker
             const colorDiv = document.createElement('div');
             colorDiv.className = 'color-picker';
+            const colorValue = gameState.settings.colors[i] || DEFAULT_COLORS[i];
             colorDiv.innerHTML = `
                 <label>Block Color:</label>
-                <input type="color" id="color-${i}" value="${gameState.settings.colors[i]}">
+                <input type="color" id="color-${i}" value="${colorValue}">
             `;
             playerDiv.appendChild(colorDiv);
 
@@ -519,15 +1456,18 @@ class UIManager {
             actions.forEach((action, idx) => {
                 const bindingDiv = document.createElement('div');
                 bindingDiv.className = 'key-binding';
+                const currentCode = normalizeKeyCode(gameState.settings.keys[i][action] || DEFAULT_KEYS[i][action]);
                 bindingDiv.innerHTML = `
                     <label>${labels[idx]}:</label>
-                    <input type="text" id="key-${i}-${action}" 
-                           value="${gameState.settings.keys[i][action]}" 
+                    <input type="text" id="key-${i}-${action}"
+                           value="${formatKeyLabel(currentCode)}"
                            readonly
-                           data-player="${i}" 
-                           data-action="${action}">
+                           data-player="${i}"
+                           data-action="${action}"
+                           data-key-code="${currentCode}">
                 `;
                 keysDiv.appendChild(bindingDiv);
+                gameState.settings.keys[i][action] = currentCode;
             });
 
             playerDiv.appendChild(keysDiv);
@@ -544,13 +1484,15 @@ class UIManager {
 
     captureKey(input) {
         input.value = 'Press a key...';
-        
+
         const handler = (e) => {
             e.preventDefault();
-            input.value = e.key;
+            const code = normalizeKeyCode(e.code || e.key);
+            input.dataset.keyCode = code;
+            input.value = formatKeyLabel(code);
             document.removeEventListener('keydown', handler);
         };
-        
+
         document.addEventListener('keydown', handler);
     }
 
@@ -566,8 +1508,11 @@ class UIManager {
             const actions = ['left', 'right', 'down', 'rotate', 'drop'];
             actions.forEach(action => {
                 const keyInput = document.getElementById(`key-${i}-${action}`);
-                if (keyInput.value && keyInput.value !== 'Press a key...') {
-                    gameState.settings.keys[i][action] = keyInput.value;
+                if (!keyInput) return;
+                const storedCode = keyInput.dataset.keyCode || '';
+                const finalCode = normalizeKeyCode(storedCode || keyInput.value);
+                if (finalCode) {
+                    gameState.settings.keys[i][action] = finalCode;
                 }
             });
         }
@@ -589,9 +1534,48 @@ function init() {
     const savedSettings = localStorage.getItem('blockies-settings');
     if (savedSettings) {
         try {
-            gameState.settings = JSON.parse(savedSettings);
+            const parsed = JSON.parse(savedSettings);
+            if (parsed && typeof parsed === 'object') {
+                if (Array.isArray(parsed.colors) && parsed.colors.length) {
+                    const colors = parsed.colors.slice(0, DEFAULT_COLORS.length);
+                    while (colors.length < DEFAULT_COLORS.length) {
+                        colors.push(DEFAULT_COLORS[colors.length]);
+                    }
+                    gameState.settings.colors = colors;
+                }
+
+                if (Array.isArray(parsed.keys)) {
+                    const actions = ['left', 'right', 'down', 'rotate', 'drop'];
+                    const keysArray = parsed.keys.slice(0, DEFAULT_KEYS.length);
+                    gameState.settings.keys = keysArray.map((keySet = {}, index) => {
+                        const defaults = DEFAULT_KEYS[index] || DEFAULT_KEYS[0];
+                        const normalizedSet = {};
+                        actions.forEach(action => {
+                            const candidate = keySet[action] || defaults[action];
+                            normalizedSet[action] = normalizeKeyCode(candidate);
+                        });
+                        return normalizedSet;
+                    });
+                }
+            }
         } catch (e) {
             console.error('Failed to load settings:', e);
+        }
+    }
+
+    if (!Array.isArray(gameState.settings.keys)) {
+        gameState.settings.keys = JSON.parse(JSON.stringify(DEFAULT_KEYS));
+    } else {
+        const actions = ['left', 'right', 'down', 'rotate', 'drop'];
+        gameState.settings.keys = gameState.settings.keys.slice(0, DEFAULT_KEYS.length);
+        while (gameState.settings.keys.length < DEFAULT_KEYS.length) {
+            const index = gameState.settings.keys.length;
+            const defaults = DEFAULT_KEYS[index] || DEFAULT_KEYS[0];
+            const filled = {};
+            actions.forEach(action => {
+                filled[action] = defaults[action];
+            });
+            gameState.settings.keys.push(filled);
         }
     }
 
