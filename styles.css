@@ -251,21 +251,26 @@ header h1 span {
 }
 
 .screen.active {
-    display: block;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 500px;
 }
 
 #main-menu .game-info {
-    max-width: 800px;
+    max-width: 900px;
+    width: 100%;
     margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
     text-align: center;
     align-items: center;
+    padding: 20px;
 }
 
 #main-menu h2 {
-    font-size: clamp(1.5rem, 5vw, 2rem);
+    font-size: clamp(1.8rem, 5vw, 2.5rem);
     color: var(--accent);
     font-weight: 700;
     text-transform: uppercase;
@@ -273,13 +278,16 @@ header h1 span {
     text-shadow: 
         0 0 10px rgba(255, 107, 157, 0.8),
         2px 2px 4px rgba(0, 0, 0, 0.5);
+    margin-bottom: -8px;
 }
 
 #main-menu p {
-    font-size: 0.95rem;
-    line-height: 1.6;
+    font-size: 1rem;
+    line-height: 1.7;
     color: var(--text-muted);
     font-weight: 500;
+    max-width: 700px;
+    margin: 0 auto;
 }
 
 .feature-list {
@@ -287,14 +295,15 @@ header h1 span {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 10px;
+    gap: 12px;
     color: var(--accent-strong);
     font-weight: 700;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    margin: 8px 0;
 }
 
 .feature-list li {
-    padding: 8px 14px;
+    padding: 10px 18px;
     border-radius: var(--radius-lg);
     background: rgba(196, 113, 237, 0.15);
     border: 2px solid rgba(196, 113, 237, 0.3);
@@ -304,18 +313,19 @@ header h1 span {
 
 .mode-selection {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
     width: 100%;
-    max-width: 600px;
+    max-width: 700px;
+    margin: 0 auto;
 }
 
 .mode-btn {
     border-radius: var(--radius-lg);
-    padding: 24px 16px;
+    padding: 32px 20px;
     border: 3px solid rgba(255, 107, 157, 0.4);
     background: linear-gradient(180deg, rgba(255, 235, 245, 0.95), rgba(255, 220, 235, 0.9));
-    font-size: 1.1rem;
+    font-size: 1.3rem;
     font-weight: 700;
     color: var(--accent);
     cursor: pointer;
@@ -1186,12 +1196,31 @@ canvas {
     }
 
     .mode-selection {
-        gap: 10px;
+        grid-template-columns: 1fr;
+        gap: 12px;
     }
 
     .mode-btn {
-        padding: 18px 12px;
-        font-size: 1rem;
+        padding: 20px 16px;
+        font-size: 1.1rem;
+    }
+    
+    #main-menu .game-info {
+        gap: 16px;
+        padding: 12px;
+    }
+    
+    #main-menu h2 {
+        font-size: clamp(1.5rem, 4.5vw, 2rem);
+    }
+    
+    .feature-list {
+        gap: 8px;
+    }
+    
+    .feature-list li {
+        padding: 8px 12px;
+        font-size: 0.8rem;
     }
 }
 
