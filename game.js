@@ -47,6 +47,33 @@ const TRANSLATIONS = {
         playAgain: "Play Again",
         teamScore: "Team Score",
         lines: "lines",
+        comboReady: "Combo ready",
+        comboX: "Combo x",
+        streak: "streak",
+        inPlay: "In play",
+        out: "Out",
+        lineBreak: "Line break",
+        doubleBreak: "Double break",
+        tripleBreak: "Triple break",
+        megaClear: "Mega clear",
+        pts: "pts",
+        ptsPerLine: "pts / line",
+        multiBonus: "Multi",
+        streakBonus: "Streak",
+        
+        // Feature list
+        multipleGameModes: "Multiple Game Modes",
+        localAndOnlineMultiplayer: "Local & Online Multiplayer",
+        fastPacedAction: "Fast-Paced Action",
+        
+        // Empty states
+        noRoomsAvailable: "No rooms available yet",
+        createRoomPrompt: "Be the first to create a room!",
+        
+        // Network errors
+        connectionFailed: "Connection failed",
+        serverUnavailable: "Server is currently unavailable. Please try again later.",
+        socketIoNotAvailable: "Unable to connect to multiplayer server.",
         
         // Online
         onlineMultiplayer: "Online Multiplayer",
@@ -126,6 +153,33 @@ const TRANSLATIONS = {
         playAgain: "Играть снова",
         teamScore: "Командный счёт",
         lines: "линий",
+        comboReady: "Комбо готово",
+        comboX: "Комбо x",
+        streak: "серия",
+        inPlay: "В игре",
+        out: "Выбыл",
+        lineBreak: "Линия",
+        doubleBreak: "Двойная",
+        tripleBreak: "Тройная",
+        megaClear: "Мега-очистка",
+        pts: "очк",
+        ptsPerLine: "очк / линию",
+        multiBonus: "Мульти",
+        streakBonus: "Серия",
+        
+        // Feature list
+        multipleGameModes: "Множество игровых режимов",
+        localAndOnlineMultiplayer: "Локальный и онлайн мультиплеер",
+        fastPacedAction: "Быстрый экшен",
+        
+        // Empty states
+        noRoomsAvailable: "Комнат пока нет",
+        createRoomPrompt: "Создайте первую комнату!",
+        
+        // Network errors
+        connectionFailed: "Ошибка подключения",
+        serverUnavailable: "Сервер временно недоступен. Попробуйте позже.",
+        socketIoNotAvailable: "Не удалось подключиться к серверу мультиплеера.",
         
         // Online
         onlineMultiplayer: "Сетевая игра",
@@ -1508,10 +1562,10 @@ class UIManager {
         if (!statusEl) return;
 
         if (player.gameOver) {
-            statusEl.textContent = 'Out';
+            statusEl.textContent = t('out');
             statusEl.classList.add('is-out');
         } else {
-            statusEl.textContent = 'In play';
+            statusEl.textContent = t('inPlay');
             statusEl.classList.remove('is-out');
         }
     }
@@ -1522,7 +1576,7 @@ class UIManager {
         const linesEl = document.getElementById('team-lines');
 
         if (scoreEl) scoreEl.textContent = formatNumber(score);
-        if (linesEl) linesEl.textContent = `${formatNumber(lines)} lines`;
+        if (linesEl) linesEl.textContent = `${formatNumber(lines)} ${t('lines')}`;
 
         this.updateComboIndicator();
         this.scheduleBoardScaleUpdate();
@@ -1533,7 +1587,7 @@ class UIManager {
         const linesEl = document.getElementById('team-lines');
 
         if (scoreEl) scoreEl.textContent = '0';
-        if (linesEl) linesEl.textContent = '0 lines';
+        if (linesEl) linesEl.textContent = `0 ${t('lines')}`;
 
         if (this.comboIndicator) {
             this.comboIndicator.classList.remove('visible');
@@ -1570,11 +1624,11 @@ class UIManager {
         if (chain > 1) {
             this.comboIndicator.classList.add('visible');
             if (this.comboLabel) {
-                this.comboLabel.textContent = `Combo x${chain}`;
+                this.comboLabel.textContent = `${t('comboX')}${chain}`;
             }
             if (this.comboBonus) {
                 const bonusPercent = (chain - 1) * 10;
-                this.comboBonus.textContent = `+${bonusPercent}% streak`;
+                this.comboBonus.textContent = `+${bonusPercent}% ${t('streak')}`;
             }
 
             if (chain !== this.lastComboChain) {
@@ -1586,7 +1640,7 @@ class UIManager {
             this.comboIndicator.classList.remove('visible');
             this.comboIndicator.classList.remove('combo-burst');
             if (this.comboLabel) {
-                this.comboLabel.textContent = 'Combo ready';
+                this.comboLabel.textContent = t('comboReady');
             }
             if (this.comboBonus) {
                 this.comboBonus.textContent = '';
@@ -1608,13 +1662,13 @@ class UIManager {
     getLineClearTitle(linesCleared) {
         switch (linesCleared) {
             case 1:
-                return 'Line break';
+                return t('lineBreak');
             case 2:
-                return 'Double break';
+                return t('doubleBreak');
             case 3:
-                return 'Triple break';
+                return t('tripleBreak');
             default:
-                return 'Mega clear';
+                return t('megaClear');
         }
     }
 
@@ -1633,20 +1687,20 @@ class UIManager {
 
         const points = document.createElement('div');
         points.className = 'clear-event__points';
-        points.textContent = `+${formatNumber(detail.totalScore)} pts`;
+        points.textContent = `+${formatNumber(detail.totalScore)} ${t('pts')}`;
         entry.appendChild(points);
 
         const perLine = document.createElement('div');
         perLine.className = 'clear-event__per-line';
-        perLine.textContent = `${formatNumber(detail.perLineScore)} pts / line`;
+        perLine.textContent = `${formatNumber(detail.perLineScore)} ${t('ptsPerLine')}`;
         entry.appendChild(perLine);
 
         const bonusChips = [];
         if (detail.multiMultiplier > 1) {
-            bonusChips.push(`Multi +${detail.multiBonusPercent}%`);
+            bonusChips.push(`${t('multiBonus')} +${detail.multiBonusPercent}%`);
         }
         if (detail.comboMultiplier > 1) {
-            bonusChips.push(`Streak +${detail.streakBonusPercent}%`);
+            bonusChips.push(`${t('streakBonus')} +${detail.streakBonusPercent}%`);
         }
 
         if (bonusChips.length) {
@@ -2217,7 +2271,14 @@ class UIManager {
         });
 
         networkManager.on('error', (message) => {
-            this.showStyledMessage('Network Error', message, 'error');
+            // Provide user-friendly error messages
+            let userMessage = message;
+            if (message.includes('Socket.io client not available') || message.includes('Socket.io client')) {
+                userMessage = t('socketIoNotAvailable');
+            } else if (message.includes('Connection failed') || message.includes('failed')) {
+                userMessage = t('serverUnavailable');
+            }
+            this.showStyledMessage(t('networkError'), userMessage, 'error');
         });
 
         // Connect to server
@@ -2233,13 +2294,13 @@ class UIManager {
         
         switch(status) {
             case 'connecting':
-                text.textContent = 'Connecting to server...';
+                text.textContent = t('connectingToServer');
                 break;
             case 'connected':
-                text.textContent = 'Connected to server';
+                text.textContent = t('connectedToServer');
                 break;
             case 'disconnected':
-                text.textContent = 'Server not available';
+                text.textContent = t('disconnectedFromServer');
                 break;
         }
     }
@@ -2249,7 +2310,10 @@ class UIManager {
         container.innerHTML = '';
         
         if (rooms.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">No rooms available. Create one to start!</p>';
+            container.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">
+                <strong>${t('noRoomsAvailable')}</strong><br>
+                ${t('createRoomPrompt')}
+            </p>`;
         } else {
             rooms.forEach(room => {
                 const roomDiv = document.createElement('div');

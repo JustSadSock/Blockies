@@ -32,9 +32,9 @@
                 <h2 data-i18n="welcome">Welcome to Blockies!</h2>
                 <p data-i18n="tagline">Stack vibrant neon blocks in this modern take on the classic puzzle game. Play solo or team up with friends!</p>
                 <ul class="feature-list">
-                    <li>🎮 Multiple Game Modes</li>
-                    <li>👥 Local & Online Multiplayer</li>
-                    <li>⚡ Fast-Paced Action</li>
+                    <li>🎮 <span data-i18n="multipleGameModes">Multiple Game Modes</span></li>
+                    <li>👥 <span data-i18n="localAndOnlineMultiplayer">Local & Online Multiplayer</span></li>
+                    <li>⚡ <span data-i18n="fastPacedAction">Fast-Paced Action</span></li>
                 </ul>
                 <div class="mode-selection">
                     <button id="mode-single" class="mode-btn mode-btn-primary">
@@ -126,14 +126,14 @@
         <div id="game-screen" class="screen">
             <div id="team-stats" class="team-stats">
                 <div id="team-score-card" class="team-score-card">
-                    <div class="score-card__label">Team Score</div>
+                    <div class="score-card__label" data-i18n="teamScore">Team Score</div>
                     <div id="team-score" class="score-card__value">0</div>
                     <div class="score-card__meta">
-                        <span id="team-lines" class="score-card__meta-item">0 lines</span>
+                        <span id="team-lines" class="score-card__meta-item">0 <span data-i18n="lines">lines</span></span>
                     </div>
                 </div>
                 <div id="combo-indicator" class="combo-indicator">
-                    <span id="combo-label">Combo ready</span>
+                    <span id="combo-label" data-i18n="comboReady">Combo ready</span>
                     <span id="combo-bonus"></span>
                 </div>
                 <div id="clear-feed" class="clear-feed"></div>
