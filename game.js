@@ -385,6 +385,10 @@ class Player {
             this.position.x -= dir;
         } else {
             soundManager.move();
+            // Send online update if in online game
+            if (typeof networkManager !== 'undefined' && networkManager.connected) {
+                networkManager.sendPlayerInput({ action: 'move', direction: dir });
+            }
         }
     }
 
@@ -396,6 +400,10 @@ class Player {
         if (!this.checkCollision(rotated).collides) {
             this.currentPiece = rotated;
             soundManager.rotate();
+            // Send online update if in online game
+            if (typeof networkManager !== 'undefined' && networkManager.connected) {
+                networkManager.sendPlayerInput({ action: 'rotate' });
+            }
         }
     }
 
@@ -412,6 +420,10 @@ class Player {
             }
         }
         this.dropCounter = 0;
+        // Send online update if in online game
+        if (typeof networkManager !== 'undefined' && networkManager.connected) {
+            networkManager.sendPlayerInput({ action: 'drop' });
+        }
     }
 
     hardDrop() {
@@ -442,6 +454,10 @@ class Player {
             this.spawnPiece();
         }
         this.dropCounter = 0;
+        // Send online update if in online game
+        if (typeof networkManager !== 'undefined' && networkManager.connected) {
+            networkManager.sendPlayerInput({ action: 'hardDrop' });
+        }
     }
 
     merge() {
@@ -590,6 +606,10 @@ class UIManager {
         this.clearFeed = document.getElementById('clear-feed');
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
+        this.previousScreen = 'mainMenu'; // Track previous screen for settings navigation (matches screen key)
+        this.isOnlineMode = false; // Flag for online multiplayer mode
+        this.networkPlayers = {}; // Map of network player IDs to local indices
+        this.localPlayerIndex = -1; // Local player index in online mode
 
         this.moveRepeatInterval = 90;
         this.softDropInitialDelay = 0;
@@ -599,6 +619,16 @@ class UIManager {
         this.initTouchControls();
         this.initGamepads();
         window.addEventListener('resize', () => this.handleResize());
+    }
+    
+    // Helper method to check if a player can be controlled locally
+    isPlayerControllable(player) {
+        if (player.gameOver) return false;
+        // In online mode, only allow local player to be controlled
+        if (this.isOnlineMode && player.id !== this.localPlayerIndex) {
+            return false;
+        }
+        return true;
     }
 
     initGamepads() {
@@ -860,6 +890,14 @@ class UIManager {
     }
 
     showScreen(screenName) {
+        // Track previous screen for settings navigation
+        const currentScreen = Object.keys(this.screens).find(key => 
+            this.screens[key].classList.contains('active')
+        );
+        if (currentScreen && screenName === 'settingsScreen') {
+            this.previousScreen = currentScreen;
+        }
+        
         Object.values(this.screens).forEach(screen => screen.classList.remove('active'));
         this.screens[screenName].classList.add('active');
 
@@ -1632,7 +1670,7 @@ class UIManager {
         let boardNeedsRedraw = false;
 
         gameState.players.forEach(player => {
-            if (player.gameOver) return;
+            if (!this.isPlayerControllable(player)) return;
 
             const action = this.getActionForCode(player, code);
             if (!action) return;
@@ -1692,7 +1730,7 @@ class UIManager {
         let handled = false;
 
         gameState.players.forEach(player => {
-            if (player.gameOver) return;
+            if (!this.isPlayerControllable(player)) return;
 
             const action = this.getActionForCode(player, code);
             if (!action) return;
@@ -1735,6 +1773,12 @@ class UIManager {
         gameState.players = [];
         gameState.inputStates = new Map();
         resetSharedStats();
+        
+        // Reset online mode flags
+        this.isOnlineMode = false;
+        this.networkPlayers = {};
+        this.localPlayerIndex = -1;
+        
         this.showScreen('mainMenu');
         this.refreshTouchStatus();
 
@@ -2108,18 +2152,78 @@ class UIManager {
         // Map network players to game players
         const numPlayers = data.players.length;
         
-        // Update game state with player colors from network
+        // Store network player info for synchronization
+        this.networkPlayers = {};
+        this.localPlayerIndex = -1;
+        this.isOnlineMode = true; // Flag to indicate online mode
+        
+        // Update game state with player colors from network and map IDs
         data.players.forEach((netPlayer, index) => {
             gameState.settings.colors[index] = netPlayer.color;
+            this.networkPlayers[netPlayer.id] = index;
+            
+            // Identify which player is the local player
+            if (networkManager.socket && netPlayer.id === networkManager.socket.id) {
+                this.localPlayerIndex = index;
+            }
         });
         
+        // Start the game with proper player count
         this.startGame(numPlayers);
         
-        // Note: Full online game synchronization (real-time piece movement, board state sync) 
-        // is not implemented in this version. The game currently supports room management,
-        // player setup, and basic multiplayer session initialization. Future enhancements
-        // should add real-time game state synchronization for networked gameplay.
+        // Set up online synchronization
+        this.setupOnlineSync();
+        
         console.log('Online game started with players:', data.players);
+        console.log('Local player index:', this.localPlayerIndex);
+    }
+    
+    setupOnlineSync() {
+        if (!networkManager.socket) return;
+        
+        const VALID_ACTIONS = ['move', 'rotate', 'drop', 'hardDrop'];
+        
+        // Listen for remote player inputs
+        networkManager.on('playerInput', (data) => {
+            // Validate input data
+            if (!data || typeof data.playerId !== 'string' || typeof data.action !== 'string') {
+                console.warn('Invalid player input data received:', data);
+                return;
+            }
+            
+            // Validate action type
+            if (!VALID_ACTIONS.includes(data.action)) {
+                console.warn('Invalid action type received:', data.action);
+                return;
+            }
+            
+            const playerIndex = this.networkPlayers[data.playerId];
+            if (playerIndex !== undefined && playerIndex !== this.localPlayerIndex) {
+                const player = gameState.players[playerIndex];
+                if (player && !player.gameOver) {
+                    // Apply the action from remote player
+                    switch (data.action) {
+                        case 'move':
+                            // Validate direction is -1 or 1
+                            if (typeof data.direction === 'number' && (data.direction === -1 || data.direction === 1)) {
+                                player.move(data.direction);
+                            } else {
+                                console.warn('Invalid move direction:', data.direction);
+                            }
+                            break;
+                        case 'rotate':
+                            player.rotate();
+                            break;
+                        case 'drop':
+                            player.drop();
+                            break;
+                        case 'hardDrop':
+                            player.hardDrop();
+                            break;
+                    }
+                }
+            }
+        });
     }
 
     showSettings() {
@@ -2271,11 +2375,13 @@ class UIManager {
         localStorage.setItem('blockies-settings', JSON.stringify(gameState.settings));
         localStorage.setItem('blockies-gamepad-assignments', JSON.stringify(gameState.gamepads.assignments));
 
-        this.showScreen('mainMenu');
+        // Return to previous screen instead of always going to main menu
+        this.showScreen(this.previousScreen || 'mainMenu');
     }
 
     hideSettings() {
-        this.showScreen('mainMenu');
+        // Return to previous screen instead of always going to main menu
+        this.showScreen(this.previousScreen || 'mainMenu');
     }
 }
 
