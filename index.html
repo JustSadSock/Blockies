@@ -34,18 +34,19 @@
         <!-- Game Screen -->
         <div id="game-screen" class="screen">
             <div id="team-stats" class="team-stats">
-                <div class="team-stat">
-                    <span class="team-label">Team Score</span>
-                    <span id="team-score" class="team-value">0</span>
+                <div id="team-score-card" class="team-score-card">
+                    <div class="score-card__label">Team Score</div>
+                    <div id="team-score" class="score-card__value">0</div>
+                    <div class="score-card__meta">
+                        <span id="team-lines" class="score-card__meta-item">0 lines</span>
+                        <span id="team-level" class="score-card__meta-item">Level 1</span>
+                    </div>
                 </div>
-                <div class="team-stat">
-                    <span class="team-label">Team Level</span>
-                    <span id="team-level" class="team-value">1</span>
+                <div id="combo-indicator" class="combo-indicator">
+                    <span id="combo-label">Combo ready</span>
+                    <span id="combo-bonus"></span>
                 </div>
-                <div class="team-stat">
-                    <span class="team-label">Team Lines</span>
-                    <span id="team-lines" class="team-value">0</span>
-                </div>
+                <div id="clear-feed" class="clear-feed"></div>
             </div>
             <div id="game-container">
                 <!-- Player boards will be dynamically created here -->

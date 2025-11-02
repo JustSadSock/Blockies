@@ -5,6 +5,10 @@ const BOARD_HEIGHT = 20;
 const ADDITIONAL_COLUMNS_PER_PLAYER = 4;
 const PREVIEW_SIZE = 4;
 
+const BASE_LINE_SCORE = 100;
+const STREAK_BONUS_STEP = 0.1;
+const MULTI_LINE_BONUS_STEP = 0.2;
+
 // Tetromino shapes
 const SHAPES = {
     I: [[1, 1, 1, 1]],
@@ -30,7 +34,9 @@ const DEFAULT_KEYS = [
 const TEAM_SCORE_TEMPLATE = {
     score: 0,
     lines: 0,
-    level: 1
+    level: 1,
+    comboChain: 0,
+    lastClearDetail: null
 };
 
 function computeBoardWidth(numPlayers) {
@@ -131,6 +137,10 @@ function normalizeKeyCode(value) {
     return value;
 }
 
+function formatNumber(value) {
+    return Number(value || 0).toLocaleString('en-US');
+}
+
 function createActionState() {
     return {
         active: false,
@@ -198,7 +208,7 @@ class Player {
                 if (checked.has(candidate)) continue;
                 checked.add(candidate);
 
-                if (!this.collides(this.currentPiece, { x: candidate, y: 0 })) {
+                if (!this.checkCollision(this.currentPiece, { x: candidate, y: 0 }).collides) {
                     spawnPosition = { x: candidate, y: 0 };
                     break;
                 }
@@ -209,7 +219,7 @@ class Player {
 
         this.position = spawnPosition || { x: preferredX, y: 0 };
 
-        if (!spawnPosition && this.collides()) {
+        if (!spawnPosition && this.checkCollision().collides) {
             this.gameOver = true;
             checkAllPlayersGameOver();
         }
@@ -217,31 +227,48 @@ class Player {
         this.dropCounter = 0;
     }
 
-    collides(piece = this.currentPiece, pos = this.position) {
+    checkCollision(piece = this.currentPiece, pos = this.position) {
+        const result = {
+            collides: false,
+            withLocked: false,
+            withActive: false
+        };
+
         for (let y = 0; y < piece.length; y++) {
             for (let x = 0; x < piece[y].length; x++) {
-                if (piece[y][x]) {
-                    const boardX = pos.x + x;
-                    const boardY = pos.y + y;
+                if (!piece[y][x]) continue;
 
-                    const boardWidth = getBoardWidth();
-                    if (boardX < 0 || boardX >= boardWidth || boardY >= BOARD_HEIGHT) {
-                        return true;
-                    }
+                const boardX = pos.x + x;
+                const boardY = pos.y + y;
+                const boardWidth = getBoardWidth();
 
-                    if (boardY >= 0 && (gameState.board[boardY][boardX] ||
-                        isCellOccupiedByOtherPiece(boardX, boardY, this.id))) {
-                        return true;
-                    }
+                if (boardX < 0 || boardX >= boardWidth || boardY >= BOARD_HEIGHT) {
+                    result.collides = true;
+                    result.withLocked = true;
+                    return result;
+                }
+
+                if (boardY < 0) continue;
+
+                if (gameState.board[boardY][boardX]) {
+                    result.collides = true;
+                    result.withLocked = true;
+                    return result;
+                }
+
+                if (isCellOccupiedByOtherPiece(boardX, boardY, this.id)) {
+                    result.collides = true;
+                    result.withActive = true;
                 }
             }
         }
-        return false;
+
+        return result;
     }
 
     move(dir) {
         this.position.x += dir;
-        if (this.collides()) {
+        if (this.checkCollision().collides) {
             this.position.x -= dir;
         }
     }
@@ -251,32 +278,52 @@ class Player {
             this.currentPiece.map(row => row[i]).reverse()
         );
 
-        if (!this.collides(rotated)) {
+        if (!this.checkCollision(rotated).collides) {
             this.currentPiece = rotated;
         }
     }
 
     drop() {
         this.position.y++;
-        if (this.collides()) {
+        const collision = this.checkCollision();
+        if (collision.collides) {
             this.position.y--;
-            this.merge();
-            this.clearLines();
-            this.spawnPiece();
+            if (collision.withLocked) {
+                this.merge();
+                this.clearLines();
+                this.spawnPiece();
+            }
         }
         this.dropCounter = 0;
     }
 
     hardDrop() {
         let maxDrops = BOARD_HEIGHT; // Safety limit
-        while (!this.collides() && maxDrops > 0) {
+        let landedOnLocked = false;
+
+        while (maxDrops > 0) {
             this.position.y++;
             maxDrops--;
+
+            const collision = this.checkCollision();
+            if (!collision.collides) {
+                continue;
+            }
+
+            if (collision.withLocked) {
+                landedOnLocked = true;
+            }
+
+            this.position.y--;
+            break;
         }
-        this.position.y--;
-        this.merge();
-        this.clearLines();
-        this.spawnPiece();
+
+        if (landedOnLocked) {
+            this.merge();
+            this.clearLines();
+            this.spawnPiece();
+        }
+        this.dropCounter = 0;
     }
 
     merge() {
@@ -306,26 +353,52 @@ class Player {
             }
         }
 
-        if (linesCleared > 0) {
-            const lineScores = [0, 100, 300, 500, 800];
-            const baseScore = lineScores[linesCleared] || lineScores[lineScores.length - 1];
-            const gained = baseScore * gameState.sharedStats.level;
-
-            gameState.sharedStats.lines += linesCleared;
-            gameState.sharedStats.score += gained;
-            gameState.sharedStats.level = Math.floor(gameState.sharedStats.lines / 10) + 1;
-
-            this.lines = gameState.sharedStats.lines;
-            this.score = gameState.sharedStats.score;
-            this.level = gameState.sharedStats.level;
-            gameState.players.forEach(player => {
-                player.dropInterval = Math.max(100, player.dropInterval * Math.pow(0.95, linesCleared));
-                player.lines = gameState.sharedStats.lines;
-                player.score = gameState.sharedStats.score;
-                player.level = gameState.sharedStats.level;
-            });
-            gameState.sharedStatsDirty = true;
+        if (linesCleared === 0) {
+            if (gameState.sharedStats.comboChain !== 0) {
+                gameState.sharedStats.comboChain = 0;
+                gameState.sharedStatsDirty = true;
+            }
+            gameState.sharedStats.lastClearDetail = null;
+            return;
         }
+
+        const comboStep = gameState.sharedStats.comboChain || 0;
+        const comboMultiplier = 1 + STREAK_BONUS_STEP * comboStep;
+        const multiMultiplier = 1 + MULTI_LINE_BONUS_STEP * (linesCleared - 1);
+        const perLineScore = Math.round(BASE_LINE_SCORE * comboMultiplier * multiMultiplier);
+        const gained = perLineScore * linesCleared;
+
+        const streakBonusPercent = Math.round((comboMultiplier - 1) * 100);
+        const multiBonusPercent = Math.round((multiMultiplier - 1) * 100);
+
+        gameState.sharedStats.lines += linesCleared;
+        gameState.sharedStats.score += gained;
+        gameState.sharedStats.level = Math.floor(gameState.sharedStats.lines / 10) + 1;
+        gameState.sharedStats.comboChain = comboStep + 1;
+        gameState.sharedStats.lastClearDetail = {
+            linesCleared,
+            totalScore: gained,
+            perLineScore,
+            basePerLine: BASE_LINE_SCORE,
+            comboChain: gameState.sharedStats.comboChain,
+            comboMultiplier,
+            multiMultiplier,
+            streakBonusPercent,
+            multiBonusPercent
+        };
+
+        this.lines = gameState.sharedStats.lines;
+        this.score = gameState.sharedStats.score;
+        this.level = gameState.sharedStats.level;
+
+        gameState.players.forEach(player => {
+            player.dropInterval = Math.max(100, player.dropInterval * Math.pow(0.95, linesCleared));
+            player.lines = gameState.sharedStats.lines;
+            player.score = gameState.sharedStats.score;
+            player.level = gameState.sharedStats.level;
+        });
+
+        gameState.sharedStatsDirty = true;
     }
 
     update(deltaTime) {
@@ -385,6 +458,12 @@ class UIManager {
         this.touchControls = document.getElementById('touch-controls');
         this.touchStatus = document.getElementById('touch-status');
         this.touchPlayerIndex = 0;
+        this.scoreCard = document.getElementById('team-score-card');
+        this.comboIndicator = document.getElementById('combo-indicator');
+        this.comboLabel = document.getElementById('combo-label');
+        this.comboBonus = document.getElementById('combo-bonus');
+        this.clearFeed = document.getElementById('clear-feed');
+        this.lastComboChain = 0;
 
         this.moveRepeatInterval = 90;
         this.softDropInitialDelay = 0;
@@ -588,6 +667,12 @@ class UIManager {
         const container = document.getElementById('game-container');
         container.innerHTML = '';
 
+        if (this.clearFeed) {
+            this.clearFeed.innerHTML = '';
+        }
+        this.lastComboChain = 0;
+        this.updateComboIndicator();
+
         const boardWrapper = document.createElement('div');
         boardWrapper.id = 'shared-board';
 
@@ -597,11 +682,11 @@ class UIManager {
         canvas.height = BOARD_HEIGHT * BLOCK_SIZE;
         boardWrapper.appendChild(canvas);
 
-        const infoWrapper = document.createElement('div');
-        infoWrapper.id = 'players-info';
+        const previewsWrapper = document.createElement('div');
+        previewsWrapper.id = 'player-previews';
 
         container.appendChild(boardWrapper);
-        container.appendChild(infoWrapper);
+        container.appendChild(previewsWrapper);
 
         for (let i = 0; i < numPlayers; i++) {
             const spawnAnchor = ((i + 1) / (numPlayers + 1)) * gameState.boardWidth;
@@ -622,7 +707,7 @@ class UIManager {
                 down: createActionState()
             });
 
-            this.createPlayerInfo(player, infoWrapper);
+            this.createPlayerInfo(player, previewsWrapper);
             this.updatePlayerInfo(player);
             this.drawNextPiece(player);
         }
@@ -636,37 +721,36 @@ class UIManager {
     }
 
     createPlayerInfo(player, container) {
-        const playerCard = document.createElement('div');
-        playerCard.className = 'player-info-card';
-        playerCard.id = `player-${player.id}`;
+        const preview = document.createElement('div');
+        preview.className = 'player-preview';
+        preview.id = `player-${player.id}`;
 
         const header = document.createElement('div');
-        header.className = 'player-header';
-        header.style.background = player.color;
-        header.style.color = 'white';
-        header.textContent = `Player ${player.id + 1}`;
-
-        const stats = document.createElement('div');
-        stats.className = 'player-info';
-        stats.innerHTML = `
-            <div class="score">Team Score: <span id="score-${player.id}">0</span></div>
-            <div class="level">Team Level: <span id="level-${player.id}">1</span></div>
-            <div class="lines">Team Lines: <span id="lines-${player.id}">0</span></div>
+        header.className = 'preview-header';
+        header.style.setProperty('--player-color', player.color);
+        header.innerHTML = `
+            <span class="preview-badge" style="background:${player.color}"></span>
+            Player ${player.id + 1}
         `;
+
+        const status = document.createElement('div');
+        status.className = 'preview-status';
+        status.id = `status-${player.id}`;
+        status.textContent = 'In play';
 
         const nextDiv = document.createElement('div');
         nextDiv.className = 'next-piece';
-        nextDiv.innerHTML = '<div>Next:</div>';
+        nextDiv.innerHTML = '<span class="next-label">Next</span>';
         const nextCanvas = document.createElement('canvas');
         nextCanvas.id = `next-${player.id}`;
         nextCanvas.width = PREVIEW_SIZE * BLOCK_SIZE;
         nextCanvas.height = PREVIEW_SIZE * BLOCK_SIZE;
         nextDiv.appendChild(nextCanvas);
 
-        playerCard.appendChild(header);
-        playerCard.appendChild(stats);
-        playerCard.appendChild(nextDiv);
-        container.appendChild(playerCard);
+        preview.appendChild(header);
+        preview.appendChild(status);
+        preview.appendChild(nextDiv);
+        container.appendChild(preview);
     }
 
     gameLoop(time) {
@@ -782,17 +866,16 @@ class UIManager {
     }
 
     updatePlayerInfo(player) {
-        const scoreEl = document.getElementById(`score-${player.id}`);
-        const levelEl = document.getElementById(`level-${player.id}`);
-        const linesEl = document.getElementById(`lines-${player.id}`);
+        const statusEl = document.getElementById(`status-${player.id}`);
+        if (!statusEl) return;
 
-        if (!scoreEl || !levelEl || !linesEl) {
-            return;
+        if (player.gameOver) {
+            statusEl.textContent = 'Out';
+            statusEl.classList.add('is-out');
+        } else {
+            statusEl.textContent = 'In play';
+            statusEl.classList.remove('is-out');
         }
-
-        scoreEl.textContent = player.score;
-        levelEl.textContent = player.level;
-        linesEl.textContent = player.lines;
     }
 
     updateTeamStats() {
@@ -801,9 +884,11 @@ class UIManager {
         const levelEl = document.getElementById('team-level');
         const linesEl = document.getElementById('team-lines');
 
-        if (scoreEl) scoreEl.textContent = score;
-        if (levelEl) levelEl.textContent = level;
-        if (linesEl) linesEl.textContent = lines;
+        if (scoreEl) scoreEl.textContent = formatNumber(score);
+        if (levelEl) levelEl.textContent = `Level ${formatNumber(level)}`;
+        if (linesEl) linesEl.textContent = `${formatNumber(lines)} lines`;
+
+        this.updateComboIndicator();
     }
 
     resetTeamStatsDisplay() {
@@ -812,15 +897,147 @@ class UIManager {
         const linesEl = document.getElementById('team-lines');
 
         if (scoreEl) scoreEl.textContent = '0';
-        if (levelEl) levelEl.textContent = '1';
-        if (linesEl) linesEl.textContent = '0';
+        if (levelEl) levelEl.textContent = 'Level 1';
+        if (linesEl) linesEl.textContent = '0 lines';
+
+        if (this.comboIndicator) {
+            this.comboIndicator.classList.remove('visible');
+        }
+        if (this.clearFeed) {
+            this.clearFeed.innerHTML = '';
+        }
+        if (this.scoreCard) {
+            this.scoreCard.classList.remove('score-card--pulse');
+        }
+        this.lastComboChain = 0;
     }
 
     updateTeamStatsIfNeeded() {
-        if (gameState.sharedStatsDirty) {
-            this.updateTeamStats();
-            gameState.sharedStatsDirty = false;
+        if (!gameState.sharedStatsDirty) {
+            return;
         }
+
+        this.updateTeamStats();
+
+        const detail = gameState.sharedStats.lastClearDetail;
+        if (detail) {
+            this.showLineClearCelebration(detail);
+            gameState.sharedStats.lastClearDetail = null;
+        }
+
+        gameState.sharedStatsDirty = false;
+    }
+
+    updateComboIndicator() {
+        if (!this.comboIndicator) return;
+
+        const chain = gameState.sharedStats.comboChain || 0;
+        if (chain > 1) {
+            this.comboIndicator.classList.add('visible');
+            if (this.comboLabel) {
+                this.comboLabel.textContent = `Combo x${chain}`;
+            }
+            if (this.comboBonus) {
+                const bonusPercent = (chain - 1) * 10;
+                this.comboBonus.textContent = `+${bonusPercent}% streak`;
+            }
+
+            if (chain !== this.lastComboChain) {
+                this.comboIndicator.classList.remove('combo-burst');
+                void this.comboIndicator.offsetWidth;
+                this.comboIndicator.classList.add('combo-burst');
+            }
+        } else {
+            this.comboIndicator.classList.remove('visible');
+            this.comboIndicator.classList.remove('combo-burst');
+            if (this.comboLabel) {
+                this.comboLabel.textContent = 'Combo ready';
+            }
+            if (this.comboBonus) {
+                this.comboBonus.textContent = '';
+            }
+        }
+
+        this.lastComboChain = chain;
+    }
+
+    flashScoreCard() {
+        if (!this.scoreCard) return;
+
+        this.scoreCard.classList.remove('score-card--pulse');
+        void this.scoreCard.offsetWidth;
+        this.scoreCard.classList.add('score-card--pulse');
+    }
+
+    getLineClearTitle(linesCleared) {
+        switch (linesCleared) {
+            case 1:
+                return 'Line break';
+            case 2:
+                return 'Double break';
+            case 3:
+                return 'Triple break';
+            default:
+                return 'Mega clear';
+        }
+    }
+
+    showLineClearCelebration(detail) {
+        this.flashScoreCard();
+
+        if (!this.clearFeed) return;
+
+        const entry = document.createElement('div');
+        entry.className = 'clear-event';
+
+        const title = document.createElement('div');
+        title.className = 'clear-event__title';
+        title.textContent = this.getLineClearTitle(detail.linesCleared);
+        entry.appendChild(title);
+
+        const points = document.createElement('div');
+        points.className = 'clear-event__points';
+        points.textContent = `+${formatNumber(detail.totalScore)} pts`;
+        entry.appendChild(points);
+
+        const perLine = document.createElement('div');
+        perLine.className = 'clear-event__per-line';
+        perLine.textContent = `${formatNumber(detail.perLineScore)} pts / line`;
+        entry.appendChild(perLine);
+
+        const bonusChips = [];
+        if (detail.multiMultiplier > 1) {
+            bonusChips.push(`Multi +${detail.multiBonusPercent}%`);
+        }
+        if (detail.comboMultiplier > 1) {
+            bonusChips.push(`Streak +${detail.streakBonusPercent}%`);
+        }
+
+        if (bonusChips.length) {
+            const bonusRow = document.createElement('div');
+            bonusRow.className = 'clear-event__bonuses';
+            bonusChips.forEach(text => {
+                const chip = document.createElement('span');
+                chip.textContent = text;
+                bonusRow.appendChild(chip);
+            });
+            entry.appendChild(bonusRow);
+        }
+
+        this.clearFeed.appendChild(entry);
+
+        while (this.clearFeed.children.length > 4) {
+            this.clearFeed.removeChild(this.clearFeed.firstChild);
+        }
+
+        requestAnimationFrame(() => {
+            entry.classList.add('visible');
+        });
+
+        setTimeout(() => {
+            entry.classList.add('clear-event--fade');
+            setTimeout(() => entry.remove(), 600);
+        }, 3600);
     }
 
     getActionForCode(player, code) {
