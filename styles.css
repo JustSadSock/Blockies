@@ -155,7 +155,21 @@ header h1 span {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
+    align-items: center;
     gap: 12px;
+}
+
+.gamepad-status {
+    font-size: 0.75rem;
+    color: var(--cyber-cyan);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 4px 8px;
+    background: rgba(0, 217, 255, 0.15);
+    border: 1px solid rgba(0, 217, 255, 0.3);
+    border-radius: var(--radius-lg);
+    white-space: nowrap;
 }
 
 .btn {

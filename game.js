@@ -20,8 +20,8 @@ const SHAPES = {
     L: [[0, 0, 1], [1, 1, 1]]
 };
 
-// Default colors for players
-const DEFAULT_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD93D', '#95E1D3'];
+// Default colors for players - Retro-futurism palette
+const DEFAULT_COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
 
 // Default key bindings for players (keyboard layout agnostic using code values)
 const DEFAULT_KEYS = [
@@ -525,20 +525,36 @@ class UIManager {
     initGamepads() {
         // Scan for gamepads initially
         scanGamepads();
+        this.updateGamepadStatus();
         
         // Listen for gamepad connection events
         window.addEventListener('gamepadconnected', (e) => {
             console.log('Gamepad connected:', e.gamepad.id);
             scanGamepads();
+            this.updateGamepadStatus();
         });
         
         window.addEventListener('gamepaddisconnected', (e) => {
             console.log('Gamepad disconnected:', e.gamepad.id);
             scanGamepads();
+            this.updateGamepadStatus();
             // Remove assignments for this gamepad
             delete gameState.gamepads.assignments[e.gamepad.index];
             gameState.gamepads.buttonStates.delete(e.gamepad.index);
         });
+    }
+    
+    updateGamepadStatus() {
+        const statusEl = document.getElementById('gamepad-status');
+        if (!statusEl) return;
+        
+        const count = gameState.gamepads.connected.length;
+        if (count > 0) {
+            statusEl.textContent = `🎮 ${count} Gamepad${count > 1 ? 's' : ''}`;
+            statusEl.style.display = 'block';
+        } else {
+            statusEl.style.display = 'none';
+        }
     }
 
     pollGamepads() {
@@ -964,43 +980,92 @@ class UIManager {
 
         const ctx = canvas.getContext('2d');
         const boardWidth = getBoardWidth();
-        ctx.fillStyle = '#fff';
+        
+        // Dark background with subtle grid
+        ctx.fillStyle = '#0a0515';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // Draw locked blocks with retro styling
         for (let y = 0; y < BOARD_HEIGHT; y++) {
             for (let x = 0; x < boardWidth; x++) {
                 const occupant = gameState.board[y][x];
                 if (occupant) {
                     const player = gameState.players[occupant - 1];
                     const color = player ? player.color : '#333';
-                    ctx.fillStyle = color;
-                    ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                    
+                    // Main block with gradient
+                    const gradient = ctx.createLinearGradient(
+                        x * BLOCK_SIZE, y * BLOCK_SIZE,
+                        x * BLOCK_SIZE, (y + 1) * BLOCK_SIZE
+                    );
+                    gradient.addColorStop(0, color);
+                    gradient.addColorStop(1, this.darkenColor(color, 0.3));
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
 
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                    // Highlight
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                    ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 2, BLOCK_SIZE - 6, 3);
+                    
+                    // Border
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
                     ctx.lineWidth = 2;
-                    ctx.strokeRect(x * BLOCK_SIZE + 1, y * BLOCK_SIZE + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
+                    ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
                 }
             }
         }
 
+        // Draw active pieces with glow
         gameState.players.forEach(player => {
             if (!player.currentPiece || player.gameOver) return;
 
-            ctx.fillStyle = player.color;
             for (let y = 0; y < player.currentPiece.length; y++) {
                 for (let x = 0; x < player.currentPiece[y].length; x++) {
                     if (player.currentPiece[y][x]) {
                         const drawX = (player.position.x + x) * BLOCK_SIZE;
                         const drawY = (player.position.y + y) * BLOCK_SIZE;
-                        ctx.fillRect(drawX, drawY, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                        
+                        // Glow effect
+                        ctx.shadowColor = player.color;
+                        ctx.shadowBlur = 8;
+                        
+                        // Main block with gradient
+                        const gradient = ctx.createLinearGradient(
+                            drawX, drawY,
+                            drawX, drawY + BLOCK_SIZE
+                        );
+                        gradient.addColorStop(0, player.color);
+                        gradient.addColorStop(1, this.darkenColor(player.color, 0.3));
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(drawX, drawY, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
+                        
+                        ctx.shadowBlur = 0;
 
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                        // Highlight
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                        ctx.fillRect(drawX + 2, drawY + 2, BLOCK_SIZE - 6, 3);
+                        
+                        // Border
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
                         ctx.lineWidth = 2;
-                        ctx.strokeRect(drawX + 1, drawY + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
+                        ctx.strokeRect(drawX, drawY, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
                     }
                 }
             }
         });
+    }
+    
+    darkenColor(color, amount) {
+        // Parse hex color and darken it
+        let r = parseInt(color.slice(1, 3), 16);
+        let g = parseInt(color.slice(3, 5), 16);
+        let b = parseInt(color.slice(5, 7), 16);
+        
+        r = Math.max(0, Math.floor(r * (1 - amount)));
+        g = Math.max(0, Math.floor(g * (1 - amount)));
+        b = Math.max(0, Math.floor(b * (1 - amount)));
+        
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
     }
 
     drawNextPiece(player) {
@@ -1008,11 +1073,10 @@ class UIManager {
         if (!nextCanvas) return;
 
         const nextCtx = nextCanvas.getContext('2d');
-        nextCtx.fillStyle = '#fff';
+        nextCtx.fillStyle = 'rgba(255, 250, 255, 0.98)';
         nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
 
         if (player.nextPiece) {
-            nextCtx.fillStyle = player.color;
             const offsetX = Math.floor((PREVIEW_SIZE - player.nextPiece[0].length) / 2);
             const offsetY = Math.floor((PREVIEW_SIZE - player.nextPiece.length) / 2);
 
@@ -1021,11 +1085,31 @@ class UIManager {
                     if (player.nextPiece[y][x]) {
                         const drawX = (offsetX + x) * BLOCK_SIZE;
                         const drawY = (offsetY + y) * BLOCK_SIZE;
-                        nextCtx.fillRect(drawX, drawY, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                        
+                        // Glow effect
+                        nextCtx.shadowColor = player.color;
+                        nextCtx.shadowBlur = 6;
+                        
+                        // Main block with gradient
+                        const gradient = nextCtx.createLinearGradient(
+                            drawX, drawY,
+                            drawX, drawY + BLOCK_SIZE
+                        );
+                        gradient.addColorStop(0, player.color);
+                        gradient.addColorStop(1, this.darkenColor(player.color, 0.3));
+                        nextCtx.fillStyle = gradient;
+                        nextCtx.fillRect(drawX, drawY, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
+                        
+                        nextCtx.shadowBlur = 0;
 
-                        nextCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                        // Highlight
+                        nextCtx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                        nextCtx.fillRect(drawX + 2, drawY + 2, BLOCK_SIZE - 6, 3);
+                        
+                        // Border
+                        nextCtx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
                         nextCtx.lineWidth = 2;
-                        nextCtx.strokeRect(drawX + 1, drawY + 1, BLOCK_SIZE - 3, BLOCK_SIZE - 3);
+                        nextCtx.strokeRect(drawX, drawY, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
                     }
                 }
             }
