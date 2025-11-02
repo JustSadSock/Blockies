@@ -352,32 +352,34 @@ header h1 span {
 #game-screen.active {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto 1fr auto auto;
     align-content: start;
+    justify-items: center;
     gap: 12px;
     background: linear-gradient(150deg, rgba(245, 240, 255, 0.95), rgba(235, 225, 255, 0.9));
     min-height: 0;
-    grid-auto-rows: auto;
 }
 
 .team-stats {
     display: none;
     width: 100%;
+    max-width: 800px;
     border-radius: var(--radius-lg);
     background: linear-gradient(135deg, rgba(255, 107, 157, 0.15), rgba(196, 113, 237, 0.12));
     border: 2px solid rgba(255, 107, 157, 0.3);
     padding: 12px 16px;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: 12px;
     box-shadow: 
         0 4px 0 rgba(0, 0, 0, 0.2),
         inset 0 1px 0 rgba(255, 255, 255, 0.3);
-    grid-column: 1 / -1;
 }
 
 .team-stats.visible {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
 }
 
 #game-screen.compact .team-stats.visible {
@@ -562,18 +564,48 @@ header h1 span {
     letter-spacing: 0.05em;
 }
 
+.next-pieces-preview {
+    display: none;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 800px;
+    padding: 8px;
+}
+
+.next-pieces-preview.visible {
+    display: flex;
+}
+
+.next-piece-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.next-piece-item canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
 #game-container {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(200px, 0.5fr);
-    gap: 16px;
+    display: flex;
+    justify-content: center;
     align-items: start;
     width: 100%;
     min-height: 0;
 }
 
 #game-screen.compact #game-container {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: center;
 }
 
 #shared-board {
@@ -592,7 +624,6 @@ header h1 span {
     justify-content: center;
     align-items: center;
     overflow: hidden;
-    margin: 0 auto;
     width: 100%;
     max-width: calc(var(--board-max-width) + var(--board-padding) * 2);
 }
@@ -604,22 +635,28 @@ header h1 span {
     display: block;
 }
 
-#player-previews {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+.player-info-sidebar {
+    display: none;
     gap: 12px;
     align-content: start;
     width: 100%;
+    max-width: 300px;
     max-height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-right: 4px;
+    padding: 0 4px;
 }
 
-#game-screen.compact #player-previews {
+.player-info-sidebar.visible {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+#game-screen.compact .player-info-sidebar.visible {
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     max-height: none;
     overflow: visible;
+    max-width: 100%;
 }
 
 .player-preview {
@@ -711,25 +748,18 @@ canvas {
     background: #0a0515;
 }
 
-.next-piece canvas {
-    border-radius: var(--radius-sm);
-    border: 2px solid rgba(196, 113, 237, 0.3);
-    background: rgba(255, 250, 255, 0.98);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1);
-}
-
 .game-controls {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-start;
+    justify-content: center;
     gap: 10px;
     padding: 6px 0;
-    grid-column: 1 / -1;
+    width: 100%;
+    max-width: 800px;
 }
 
 #game-screen.compact .game-controls {
     flex-direction: row;
-    grid-column: 1 / -1;
     align-items: center;
     padding: 4px 0;
 }
@@ -747,8 +777,6 @@ canvas {
     flex-direction: column;
     max-width: 500px;
     width: 100%;
-    margin: 0 auto;
-    grid-column: 1 / -1;
 }
 
 /* Show touch controls only on mobile/touch devices */
@@ -996,11 +1024,8 @@ canvas {
 
 @media (max-width: 1024px) {
     #game-container {
-        grid-template-columns: 1fr;
-    }
-
-    #player-previews {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        flex-direction: column;
+        align-items: center;
     }
 }
 

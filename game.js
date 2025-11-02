@@ -893,6 +893,16 @@ class UIManager {
 
         const container = document.getElementById('game-container');
         container.innerHTML = '';
+        
+        const nextPiecesPreview = document.getElementById('next-pieces-preview');
+        if (nextPiecesPreview) {
+            nextPiecesPreview.innerHTML = '';
+        }
+        
+        const playerInfoSidebar = document.getElementById('player-info-sidebar');
+        if (playerInfoSidebar) {
+            playerInfoSidebar.innerHTML = '';
+        }
 
         if (this.clearFeed) {
             this.clearFeed.innerHTML = '';
@@ -914,11 +924,7 @@ class UIManager {
         boardWrapper.style.setProperty('--board-max-width', `${canvas.width}px`);
         boardWrapper.appendChild(canvas);
 
-        const previewsWrapper = document.createElement('div');
-        previewsWrapper.id = 'player-previews';
-
         container.appendChild(boardWrapper);
-        container.appendChild(previewsWrapper);
 
         for (let i = 0; i < numPlayers; i++) {
             const spawnAnchor = ((i + 1) / (numPlayers + 1)) * gameState.boardWidth;
@@ -939,11 +945,19 @@ class UIManager {
                 down: createActionState()
             });
 
-            this.createPlayerInfo(player, previewsWrapper);
+            this.createPlayerInfo(player, playerInfoSidebar);
+            this.createNextPiecePreview(player, nextPiecesPreview);
             this.updatePlayerInfo(player);
             this.drawNextPiece(player);
         }
 
+        if (nextPiecesPreview && numPlayers > 0) {
+            nextPiecesPreview.classList.add('visible');
+        }
+        
+        if (playerInfoSidebar && numPlayers > 0) {
+            playerInfoSidebar.classList.add('visible');
+        }
 
         this.drawBoard();
 
@@ -952,8 +966,26 @@ class UIManager {
         this.scheduleBoardScaleUpdate();
         requestAnimationFrame((time) => this.gameLoop(time));
     }
+    
+    createNextPiecePreview(player, container) {
+        if (!container) return;
+        
+        const item = document.createElement('div');
+        item.className = 'next-piece-item';
+        item.id = `next-item-${player.id}`;
+        
+        const nextCanvas = document.createElement('canvas');
+        nextCanvas.id = `next-${player.id}`;
+        nextCanvas.width = PREVIEW_SIZE * BLOCK_SIZE;
+        nextCanvas.height = PREVIEW_SIZE * BLOCK_SIZE;
+        item.appendChild(nextCanvas);
+        
+        container.appendChild(item);
+    }
 
     createPlayerInfo(player, container) {
+        if (!container) return;
+        
         const preview = document.createElement('div');
         preview.className = 'player-preview';
         preview.id = `player-${player.id}`;
@@ -971,18 +1003,8 @@ class UIManager {
         status.id = `status-${player.id}`;
         status.textContent = 'In play';
 
-        const nextDiv = document.createElement('div');
-        nextDiv.className = 'next-piece';
-        nextDiv.innerHTML = '<span class="next-label">Next</span>';
-        const nextCanvas = document.createElement('canvas');
-        nextCanvas.id = `next-${player.id}`;
-        nextCanvas.width = PREVIEW_SIZE * BLOCK_SIZE;
-        nextCanvas.height = PREVIEW_SIZE * BLOCK_SIZE;
-        nextDiv.appendChild(nextCanvas);
-
         preview.appendChild(header);
         preview.appendChild(status);
-        preview.appendChild(nextDiv);
         container.appendChild(preview);
     }
 
@@ -1110,9 +1132,17 @@ class UIManager {
     
     darkenColor(color, amount) {
         // Parse hex color and darken it
+        if (!color || typeof color !== 'string' || !color.startsWith('#')) {
+            return '#000000';
+        }
+        
         let r = parseInt(color.slice(1, 3), 16);
         let g = parseInt(color.slice(3, 5), 16);
         let b = parseInt(color.slice(5, 7), 16);
+        
+        if (isNaN(r) || isNaN(g) || isNaN(b)) {
+            return color;
+        }
         
         r = Math.max(0, Math.floor(r * (1 - amount)));
         g = Math.max(0, Math.floor(g * (1 - amount)));
@@ -1126,8 +1156,7 @@ class UIManager {
         if (!nextCanvas) return;
 
         const nextCtx = nextCanvas.getContext('2d');
-        nextCtx.fillStyle = 'rgba(255, 250, 255, 0.98)';
-        nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+        nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
 
         if (player.nextPiece) {
             const offsetX = Math.floor((PREVIEW_SIZE - player.nextPiece[0].length) / 2);
@@ -1183,13 +1212,11 @@ class UIManager {
     }
 
     updateTeamStats() {
-        const { score, level, lines } = gameState.sharedStats;
+        const { score, lines } = gameState.sharedStats;
         const scoreEl = document.getElementById('team-score');
-        const levelEl = document.getElementById('team-level');
         const linesEl = document.getElementById('team-lines');
 
         if (scoreEl) scoreEl.textContent = formatNumber(score);
-        if (levelEl) levelEl.textContent = `Level ${formatNumber(level)}`;
         if (linesEl) linesEl.textContent = `${formatNumber(lines)} lines`;
 
         this.updateComboIndicator();
@@ -1198,11 +1225,9 @@ class UIManager {
 
     resetTeamStatsDisplay() {
         const scoreEl = document.getElementById('team-score');
-        const levelEl = document.getElementById('team-level');
         const linesEl = document.getElementById('team-lines');
 
         if (scoreEl) scoreEl.textContent = '0';
-        if (levelEl) levelEl.textContent = 'Level 1';
         if (linesEl) linesEl.textContent = '0 lines';
 
         if (this.comboIndicator) {
