@@ -136,6 +136,28 @@ io.on('connection', (socket) => {
     // Send initial rooms list
     socket.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
 
+    // Set player nickname
+    socket.on('set-nickname', (nickname) => {
+        const player = players.get(socket.id);
+        if (player && nickname && nickname.trim()) {
+            player.name = nickname.trim().substring(0, 20); // Limit to 20 chars
+            
+            // Update nickname in room if player is in one
+            if (player.roomId) {
+                const room = rooms.get(player.roomId);
+                if (room) {
+                    const roomPlayer = room.players.find(p => p.id === socket.id);
+                    if (roomPlayer) {
+                        roomPlayer.name = player.name;
+                        io.to(player.roomId).emit('room-update', room.getFullInfo());
+                    }
+                }
+            }
+            
+            console.log(`Player ${socket.id} set nickname to: ${player.name}`);
+        }
+    });
+
     // Create room
     socket.on('create-room', (data) => {
         const roomId = `room_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -240,12 +262,13 @@ io.on('connection', (socket) => {
                     io.to(player.roomId).emit('room-update', room.getFullInfo());
                     
                     // Check if all players are ready
-                    if (room.allPlayersReady() && room.players.length >= 2) {
+                    // Allow solo practice (1 player) or multiplayer (2+ players)
+                    if (room.allPlayersReady() && room.players.length >= 1) {
                         room.gameStarted = true;
                         io.to(player.roomId).emit('game-start', {
                             players: room.players
                         });
-                        console.log(`Game starting in room ${room.name}`);
+                        console.log(`Game starting in room ${room.name} with ${room.players.length} player(s)`);
                     }
                 }
             }

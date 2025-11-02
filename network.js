@@ -187,6 +187,14 @@ class NetworkManager {
         this.socket.emit('toggle-ready');
     }
 
+    setNickname(nickname) {
+        if (!this.socket || !this.connected) {
+            console.error('Not connected to server');
+            return;
+        }
+        this.socket.emit('set-nickname', nickname);
+    }
+
     sendGameState(state) {
         if (!this.socket || !this.connected) {
             return;
