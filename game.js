@@ -761,6 +761,22 @@ class UIManager {
         // Online lobby
         document.getElementById('back-from-online-btn').addEventListener('click', () => this.showScreen('mainMenu'));
         document.getElementById('create-room-btn').addEventListener('click', () => this.createRoom());
+        const nicknameInput = document.getElementById('nickname-input');
+        if (nicknameInput) {
+            // Load saved nickname
+            const savedNickname = localStorage.getItem('blockies-nickname');
+            if (savedNickname) {
+                nicknameInput.value = savedNickname;
+            }
+            // Send nickname on change
+            nicknameInput.addEventListener('input', () => {
+                const nickname = nicknameInput.value.trim();
+                if (nickname) {
+                    localStorage.setItem('blockies-nickname', nickname);
+                    networkManager.setNickname(nickname);
+                }
+            });
+        }
         const leaveRoomBtn = document.getElementById('leave-room-btn');
         if (leaveRoomBtn) {
             leaveRoomBtn.addEventListener('click', () => this.leaveRoom());
@@ -1966,6 +1982,12 @@ class UIManager {
         // Setup network callbacks
         networkManager.on('connect', () => {
             this.updateConnectionStatus('connected');
+            
+            // Send nickname if available
+            const nicknameInput = document.getElementById('nickname-input');
+            if (nicknameInput && nicknameInput.value.trim()) {
+                networkManager.setNickname(nicknameInput.value.trim());
+            }
         });
 
         networkManager.on('disconnect', () => {
@@ -1998,7 +2020,7 @@ class UIManager {
         });
 
         networkManager.on('error', (message) => {
-            alert('Error: ' + message);
+            this.showStyledMessage('Network Error', message, 'error');
         });
 
         // Connect to server
