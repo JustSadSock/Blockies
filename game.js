@@ -1899,11 +1899,46 @@ class UIManager {
         this.showScreen('onlineLobby');
         this.updateConnectionStatus('connecting');
         
-        // Initialize network connection (placeholder for now)
-        setTimeout(() => {
+        // Setup network callbacks
+        networkManager.on('connect', () => {
+            this.updateConnectionStatus('connected');
+        });
+
+        networkManager.on('disconnect', () => {
             this.updateConnectionStatus('disconnected');
             this.showRoomsList([]);
-        }, 1000);
+        });
+
+        networkManager.on('roomsList', (rooms) => {
+            this.showRoomsList(rooms);
+        });
+
+        networkManager.on('roomCreated', (room) => {
+            this.showRoomView(room);
+        });
+
+        networkManager.on('roomJoined', (room) => {
+            this.showRoomView(room);
+        });
+
+        networkManager.on('roomUpdate', (room) => {
+            this.updateRoomView(room);
+        });
+
+        networkManager.on('leftRoom', () => {
+            this.hideRoomView();
+        });
+
+        networkManager.on('gameStart', (data) => {
+            this.startOnlineGame(data);
+        });
+
+        networkManager.on('error', (message) => {
+            alert('Error: ' + message);
+        });
+
+        // Connect to server
+        networkManager.connect();
     }
 
     updateConnectionStatus(status) {
@@ -1950,24 +1985,138 @@ class UIManager {
     }
 
     createRoom() {
-        // Placeholder - will be implemented with networking
-        console.log('Create room functionality will be implemented with networking');
+        const roomName = prompt('Enter room name:', 'My Room');
+        if (roomName) {
+            networkManager.createRoom(roomName);
+        }
     }
 
     joinRoom(roomId) {
-        // Placeholder - will be implemented with networking
-        console.log('Join room functionality will be implemented with networking', roomId);
+        networkManager.joinRoom(roomId);
     }
 
     leaveRoom() {
-        // Placeholder - will be implemented with networking
-        const roomView = document.getElementById('room-view');
-        if (roomView) roomView.style.display = 'none';
+        networkManager.leaveRoom();
     }
 
     toggleReady() {
-        // Placeholder - will be implemented with networking
-        console.log('Toggle ready functionality will be implemented with networking');
+        networkManager.toggleReady();
+        const btn = document.getElementById('ready-btn');
+        if (btn) {
+            if (btn.textContent.includes('Ready')) {
+                btn.textContent = '⏳ Waiting...';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+            } else {
+                btn.textContent = '✓ Ready';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-primary');
+            }
+        }
+    }
+
+    showRoomView(room) {
+        const roomView = document.getElementById('room-view');
+        const roomsSection = document.querySelector('.rooms-section');
+        
+        if (roomView && roomsSection) {
+            roomsSection.style.display = 'none';
+            roomView.style.display = 'block';
+            this.updateRoomView(room);
+        }
+    }
+
+    hideRoomView() {
+        const roomView = document.getElementById('room-view');
+        const roomsSection = document.querySelector('.rooms-section');
+        
+        if (roomView && roomsSection) {
+            roomView.style.display = 'none';
+            roomsSection.style.display = 'block';
+        }
+    }
+
+    updateRoomView(room) {
+        const roomNameEl = document.getElementById('room-name');
+        const playersListEl = document.getElementById('room-players-list');
+        const colorOptionsEl = document.getElementById('color-options');
+        const statusEl = document.getElementById('room-status');
+        
+        if (roomNameEl) {
+            roomNameEl.textContent = room.name;
+        }
+
+        // Update players list
+        if (playersListEl) {
+            playersListEl.innerHTML = '';
+            room.players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'room-player-item';
+                playerDiv.innerHTML = `
+                    <div class="room-player-color" style="background: ${player.color};"></div>
+                    <div class="room-player-name">${player.name}</div>
+                    <div class="room-player-status">${player.ready ? '✓ Ready' : 'Not Ready'}</div>
+                `;
+                playersListEl.appendChild(playerDiv);
+            });
+        }
+
+        // Update color options
+        if (colorOptionsEl) {
+            colorOptionsEl.innerHTML = '';
+            const COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
+            const myPlayer = room.players.find(p => p.id === networkManager.socket.id);
+            
+            COLORS.forEach(color => {
+                const colorDiv = document.createElement('div');
+                colorDiv.className = 'color-option';
+                colorDiv.style.background = color;
+                
+                const isUsed = room.players.some(p => p.color === color);
+                const isMyColor = myPlayer && myPlayer.color === color;
+                
+                if (isMyColor) {
+                    colorDiv.classList.add('selected');
+                } else if (isUsed) {
+                    colorDiv.classList.add('disabled');
+                } else {
+                    colorDiv.addEventListener('click', () => {
+                        networkManager.changeColor(color);
+                    });
+                }
+                
+                colorOptionsEl.appendChild(colorDiv);
+            });
+        }
+
+        // Update status
+        if (statusEl) {
+            const readyCount = room.players.filter(p => p.ready).length;
+            if (readyCount === room.players.length && room.players.length > 0) {
+                statusEl.textContent = 'Starting game...';
+                statusEl.style.background = 'rgba(46, 213, 115, 0.15)';
+                statusEl.style.borderColor = 'rgba(46, 213, 115, 0.3)';
+            } else {
+                statusEl.textContent = `${readyCount}/${room.players.length} players ready`;
+                statusEl.style.background = 'rgba(255, 219, 88, 0.15)';
+                statusEl.style.borderColor = 'rgba(255, 219, 88, 0.3)';
+            }
+        }
+    }
+
+    startOnlineGame(data) {
+        // Map network players to game players
+        const numPlayers = data.players.length;
+        
+        // Update game state with player colors from network
+        data.players.forEach((netPlayer, index) => {
+            gameState.settings.colors[index] = netPlayer.color;
+        });
+        
+        this.startGame(numPlayers);
+        
+        // TODO: Implement online game synchronization
+        console.log('Online game started with players:', data.players);
     }
 
     showSettings() {
