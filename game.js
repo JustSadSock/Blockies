@@ -67,8 +67,52 @@ let gameState = {
     settings: {
         colors: [...DEFAULT_COLORS],
         keys: JSON.parse(JSON.stringify(DEFAULT_KEYS))
+    },
+    gamepads: {
+        connected: [],
+        assignments: {}, // gamepadIndex -> playerIndex
+        buttonStates: new Map() // gamepadIndex -> button states
     }
 };
+
+// Gamepad configuration
+const GAMEPAD_DEADZONE = 0.3;
+const GAMEPAD_BUTTON_MAP = {
+    left: [14], // D-pad left
+    right: [15], // D-pad right
+    down: [13], // D-pad down
+    rotate: [0, 2], // A button (Xbox) or X button (PlayStation), X button (Xbox) or Square (PlayStation)
+    drop: [1, 3] // B button (Xbox) or Circle (PlayStation), Y button (Xbox) or Triangle (PlayStation)
+};
+
+function scanGamepads() {
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const connected = [];
+    
+    for (let i = 0; i < gamepads.length; i++) {
+        if (gamepads[i]) {
+            connected.push({
+                index: i,
+                id: gamepads[i].id,
+                buttons: gamepads[i].buttons.length,
+                axes: gamepads[i].axes.length
+            });
+        }
+    }
+    
+    gameState.gamepads.connected = connected;
+    return connected;
+}
+
+function createGamepadButtonState() {
+    return {
+        left: { pressed: false, wasPressed: false },
+        right: { pressed: false, wasPressed: false },
+        down: { pressed: false, wasPressed: false },
+        rotate: { pressed: false, wasPressed: false },
+        drop: { pressed: false, wasPressed: false }
+    };
+}
 
 function resetSharedStats() {
     gameState.sharedStats = { ...TEAM_SCORE_TEMPLATE };
@@ -474,7 +518,112 @@ class UIManager {
 
         this.setupEventListeners();
         this.initTouchControls();
+        this.initGamepads();
         window.addEventListener('resize', () => this.handleResize());
+    }
+
+    initGamepads() {
+        // Scan for gamepads initially
+        scanGamepads();
+        
+        // Listen for gamepad connection events
+        window.addEventListener('gamepadconnected', (e) => {
+            console.log('Gamepad connected:', e.gamepad.id);
+            scanGamepads();
+        });
+        
+        window.addEventListener('gamepaddisconnected', (e) => {
+            console.log('Gamepad disconnected:', e.gamepad.id);
+            scanGamepads();
+            // Remove assignments for this gamepad
+            delete gameState.gamepads.assignments[e.gamepad.index];
+            gameState.gamepads.buttonStates.delete(e.gamepad.index);
+        });
+    }
+
+    pollGamepads() {
+        if (!navigator.getGamepads) return;
+        
+        const gamepads = navigator.getGamepads();
+        
+        for (let i = 0; i < gamepads.length; i++) {
+            const gamepad = gamepads[i];
+            if (!gamepad) continue;
+            
+            // Check if this gamepad is assigned to a player
+            const playerIndex = gameState.gamepads.assignments[i];
+            if (playerIndex === undefined) continue;
+            
+            const player = gameState.players[playerIndex];
+            if (!player || player.gameOver) continue;
+            
+            // Get or create button state for this gamepad
+            if (!gameState.gamepads.buttonStates.has(i)) {
+                gameState.gamepads.buttonStates.set(i, createGamepadButtonState());
+            }
+            const buttonState = gameState.gamepads.buttonStates.get(i);
+            
+            // Check buttons for each action
+            for (const action in GAMEPAD_BUTTON_MAP) {
+                const buttons = GAMEPAD_BUTTON_MAP[action];
+                const pressed = buttons.some(btnIndex => gamepad.buttons[btnIndex]?.pressed);
+                
+                const wasPressed = buttonState[action].wasPressed;
+                buttonState[action].pressed = pressed;
+                
+                // Trigger on button press (not held)
+                if (pressed && !wasPressed) {
+                    this.handleGamepadAction(player, action);
+                }
+                
+                buttonState[action].wasPressed = pressed;
+            }
+            
+            // Check D-pad axes (some controllers use axes instead of buttons)
+            const axisX = gamepad.axes[0] || 0;
+            const axisY = gamepad.axes[1] || 0;
+            
+            if (axisX < -GAMEPAD_DEADZONE && !buttonState.left.wasPressed) {
+                this.handleGamepadAction(player, 'left');
+                buttonState.left.wasPressed = true;
+            } else if (axisX > -GAMEPAD_DEADZONE) {
+                buttonState.left.wasPressed = false;
+            }
+            
+            if (axisX > GAMEPAD_DEADZONE && !buttonState.right.wasPressed) {
+                this.handleGamepadAction(player, 'right');
+                buttonState.right.wasPressed = true;
+            } else if (axisX < GAMEPAD_DEADZONE) {
+                buttonState.right.wasPressed = false;
+            }
+            
+            if (axisY > GAMEPAD_DEADZONE && !buttonState.down.wasPressed) {
+                this.handleGamepadAction(player, 'down');
+                buttonState.down.wasPressed = true;
+            } else if (axisY < GAMEPAD_DEADZONE) {
+                buttonState.down.wasPressed = false;
+            }
+        }
+    }
+
+    handleGamepadAction(player, action) {
+        switch (action) {
+            case 'left':
+                player.move(-1);
+                break;
+            case 'right':
+                player.move(1);
+                break;
+            case 'down':
+                player.drop();
+                break;
+            case 'rotate':
+                player.rotate();
+                break;
+            case 'drop':
+                player.hardDrop();
+                break;
+        }
     }
 
     setupEventListeners() {
@@ -778,6 +927,9 @@ class UIManager {
         if (!gameState.isPaused) {
             const deltaTime = time - (gameState.lastTime || time);
             gameState.lastTime = time;
+
+            // Poll gamepads
+            this.pollGamepads();
 
             let touchStatusNeedsUpdate = false;
             gameState.players.forEach(player => {
@@ -1471,7 +1623,42 @@ class UIManager {
             });
 
             playerDiv.appendChild(keysDiv);
+            
+            // Gamepad assignment
+            const gamepadDiv = document.createElement('div');
+            gamepadDiv.className = 'gamepad-picker';
+            gamepadDiv.innerHTML = `
+                <label>Gamepad:</label>
+                <select id="gamepad-${i}" class="gamepad-select">
+                    <option value="">None (Keyboard only)</option>
+                </select>
+            `;
+            playerDiv.appendChild(gamepadDiv);
+            
             container.appendChild(playerDiv);
+        }
+        
+        // Populate gamepad dropdowns
+        scanGamepads();
+        const gamepads = gameState.gamepads.connected;
+        
+        for (let i = 0; i < 4; i++) {
+            const select = document.getElementById(`gamepad-${i}`);
+            if (!select) continue;
+            
+            // Add gamepad options
+            gamepads.forEach(gp => {
+                const option = document.createElement('option');
+                option.value = gp.index;
+                option.textContent = `Gamepad ${gp.index + 1}: ${gp.id.substring(0, 30)}...`;
+                
+                // Check if this gamepad is already assigned to this player
+                if (gameState.gamepads.assignments[gp.index] === i) {
+                    option.selected = true;
+                }
+                
+                select.appendChild(option);
+            });
         }
 
         // Add event listeners for key binding inputs
@@ -1516,9 +1703,20 @@ class UIManager {
                 }
             });
         }
+        
+        // Save gamepad assignments
+        gameState.gamepads.assignments = {};
+        for (let i = 0; i < 4; i++) {
+            const select = document.getElementById(`gamepad-${i}`);
+            if (select && select.value !== '') {
+                const gamepadIndex = parseInt(select.value);
+                gameState.gamepads.assignments[gamepadIndex] = i;
+            }
+        }
 
         // Save to localStorage
         localStorage.setItem('blockies-settings', JSON.stringify(gameState.settings));
+        localStorage.setItem('blockies-gamepad-assignments', JSON.stringify(gameState.gamepads.assignments));
 
         this.showScreen('mainMenu');
     }
@@ -1576,6 +1774,16 @@ function init() {
                 filled[action] = defaults[action];
             });
             gameState.settings.keys.push(filled);
+        }
+    }
+    
+    // Load gamepad assignments
+    const savedGamepadAssignments = localStorage.getItem('blockies-gamepad-assignments');
+    if (savedGamepadAssignments) {
+        try {
+            gameState.gamepads.assignments = JSON.parse(savedGamepadAssignments);
+        } catch (e) {
+            console.error('Failed to load gamepad assignments:', e);
         }
     }
 

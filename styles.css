@@ -873,6 +873,32 @@ canvas {
     background: transparent;
 }
 
+.gamepad-picker {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: rgba(245, 240, 255, 0.98);
+    border-radius: var(--radius-lg);
+    border: 2px solid rgba(196, 113, 237, 0.2);
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.gamepad-picker select {
+    flex: 1;
+    max-width: 200px;
+    padding: 6px 10px;
+    border-radius: var(--radius-lg);
+    border: 2px solid rgba(255, 107, 157, 0.4);
+    background: rgba(255, 255, 255, 0.95);
+    font-family: 'Courier New', 'Consolas', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--accent);
+    cursor: pointer;
+}
+
 .modal {
     display: none;
     position: fixed;
