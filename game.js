@@ -47,6 +47,40 @@ const TRANSLATIONS = {
         playAgain: "Play Again",
         teamScore: "Team Score",
         lines: "lines",
+        comboReady: "Combo ready",
+        comboX: "Combo x",
+        streak: "streak",
+        inPlay: "In play",
+        out: "Out",
+        lineBreak: "Line break",
+        doubleBreak: "Double break",
+        tripleBreak: "Triple break",
+        megaClear: "Mega clear",
+        pts: "pts",
+        ptsPerLine: "pts / line",
+        multiBonus: "Multi",
+        streakBonus: "Streak",
+        
+        // Feature list
+        multipleGameModes: "Multiple Game Modes",
+        localAndOnlineMultiplayer: "Local & Online Multiplayer",
+        fastPacedAction: "Fast-Paced Action",
+        
+        // Empty states
+        noRoomsAvailable: "No rooms available yet",
+        createRoomPrompt: "Be the first to create a room!",
+        
+        // Network errors
+        connectionFailed: "Connection failed",
+        serverUnavailable: "Server is currently unavailable. Please try again later.",
+        socketIoNotAvailable: "Unable to connect to multiplayer server.",
+        
+        // Touch controls
+        touchControlsReady: "Touch controls ready",
+        startGameForTouch: "Start a game to use touch controls",
+        
+        // Combo help
+        comboHelp: "Clear lines consecutively without gaps to build a combo chain! Each combo increases your score by +10% per chain level.",
         
         // Online
         onlineMultiplayer: "Online Multiplayer",
@@ -126,6 +160,40 @@ const TRANSLATIONS = {
         playAgain: "Играть снова",
         teamScore: "Командный счёт",
         lines: "линий",
+        comboReady: "Комбо готово",
+        comboX: "Комбо x",
+        streak: "серия",
+        inPlay: "В игре",
+        out: "Выбыл",
+        lineBreak: "Линия",
+        doubleBreak: "Двойная",
+        tripleBreak: "Тройная",
+        megaClear: "Мега-очистка",
+        pts: "очк",
+        ptsPerLine: "очк / линию",
+        multiBonus: "Мульти",
+        streakBonus: "Серия",
+        
+        // Feature list
+        multipleGameModes: "Множество игровых режимов",
+        localAndOnlineMultiplayer: "Локальный и онлайн мультиплеер",
+        fastPacedAction: "Быстрый экшен",
+        
+        // Empty states
+        noRoomsAvailable: "Комнат пока нет",
+        createRoomPrompt: "Создайте первую комнату!",
+        
+        // Network errors
+        connectionFailed: "Ошибка подключения",
+        serverUnavailable: "Сервер временно недоступен. Попробуйте позже.",
+        socketIoNotAvailable: "Не удалось подключиться к серверу мультиплеера.",
+        
+        // Touch controls
+        touchControlsReady: "Сенсорное управление готово",
+        startGameForTouch: "Начните игру для использования сенсорного управления",
+        
+        // Combo help
+        comboHelp: "Убирайте линии подряд без пропусков, чтобы создать комбо-цепочку! Каждое комбо увеличивает ваш счёт на +10% за уровень цепочки.",
         
         // Online
         onlineMultiplayer: "Сетевая игра",
@@ -185,6 +253,11 @@ function updateUILanguage() {
         const key = el.getAttribute('data-i18n-placeholder');
         el.placeholder = t(key);
     });
+    
+    // Update combo tooltip if UI manager exists
+    if (window.uiManager && window.uiManager.updateComboTooltip) {
+        window.uiManager.updateComboTooltip();
+    }
 }
 
 // Game Configuration
@@ -299,6 +372,42 @@ const SHAPES = {
 
 // Default colors for players - Retro-futurism palette
 const DEFAULT_COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
+
+// Minimum brightness threshold for player colors (0-255)
+const MIN_COLOR_BRIGHTNESS = 80;
+
+// Color validation helper function
+function getColorBrightness(hexColor) {
+    // Convert hex to RGB
+    const hex = hexColor.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    // Calculate perceived brightness (ITU-R BT.709)
+    return (r * 0.2126 + g * 0.7152 + b * 0.0722);
+}
+
+function isColorTooDark(hexColor) {
+    return getColorBrightness(hexColor) < MIN_COLOR_BRIGHTNESS;
+}
+
+function suggestBrighterColor(hexColor) {
+    const hex = hexColor.replace('#', '');
+    let r = parseInt(hex.substring(0, 2), 16);
+    let g = parseInt(hex.substring(2, 4), 16);
+    let b = parseInt(hex.substring(4, 6), 16);
+    
+    // Increase brightness while maintaining hue
+    const currentBrightness = getColorBrightness(hexColor);
+    const factor = MIN_COLOR_BRIGHTNESS / currentBrightness;
+    
+    r = Math.min(255, Math.floor(r * factor * 1.5));
+    g = Math.min(255, Math.floor(g * factor * 1.5));
+    b = Math.min(255, Math.floor(b * factor * 1.5));
+    
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
 
 // Default key bindings for players (keyboard layout agnostic using code values)
 const DEFAULT_KEYS = [
@@ -814,6 +923,11 @@ class UIManager {
         this.clearFeed = document.getElementById('clear-feed');
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
+        
+        // Set combo help tooltip
+        if (this.comboIndicator) {
+            this.updateComboTooltip();
+        }
         this.previousScreen = 'mainMenu'; // Track previous screen for settings navigation (matches screen key)
         this.isOnlineMode = false; // Flag for online multiplayer mode
         this.networkPlayers = {}; // Map of network player IDs to local indices
@@ -1038,7 +1152,7 @@ class UIManager {
         });
 
         if (this.touchStatus) {
-            this.touchStatus.textContent = 'Start a game to use touch controls';
+            this.touchStatus.textContent = t('startGameForTouch');
         }
     }
 
@@ -1047,11 +1161,15 @@ class UIManager {
 
         const activePlayer = this.getTouchPlayer();
         if (activePlayer && !gameState.isGameOver) {
-            this.touchStatus.textContent = `Touch controls: Player ${activePlayer.id + 1}`;
+            this.touchStatus.textContent = currentLanguage === 'ru' 
+                ? `Сенсорное управление: Игрок ${activePlayer.id + 1}`
+                : `Touch controls: Player ${activePlayer.id + 1}`;
         } else if (gameState.players.length && gameState.players.every(player => player.gameOver)) {
-            this.touchStatus.textContent = 'All players have finished';
+            this.touchStatus.textContent = currentLanguage === 'ru'
+                ? 'Все игроки завершили игру'
+                : 'All players have finished';
         } else {
-            this.touchStatus.textContent = 'Start a game to use touch controls';
+            this.touchStatus.textContent = t('startGameForTouch');
         }
     }
 
@@ -1170,7 +1288,7 @@ class UIManager {
             } else {
                 this.touchControls.classList.remove('visible');
                 if (this.touchStatus) {
-                    this.touchStatus.textContent = 'Start a game to use touch controls';
+                    this.touchStatus.textContent = t('startGameForTouch');
                 }
             }
         }
@@ -1508,10 +1626,10 @@ class UIManager {
         if (!statusEl) return;
 
         if (player.gameOver) {
-            statusEl.textContent = 'Out';
+            statusEl.textContent = t('out');
             statusEl.classList.add('is-out');
         } else {
-            statusEl.textContent = 'In play';
+            statusEl.textContent = t('inPlay');
             statusEl.classList.remove('is-out');
         }
     }
@@ -1522,7 +1640,7 @@ class UIManager {
         const linesEl = document.getElementById('team-lines');
 
         if (scoreEl) scoreEl.textContent = formatNumber(score);
-        if (linesEl) linesEl.textContent = `${formatNumber(lines)} lines`;
+        if (linesEl) linesEl.textContent = `${formatNumber(lines)} ${t('lines')}`;
 
         this.updateComboIndicator();
         this.scheduleBoardScaleUpdate();
@@ -1533,7 +1651,7 @@ class UIManager {
         const linesEl = document.getElementById('team-lines');
 
         if (scoreEl) scoreEl.textContent = '0';
-        if (linesEl) linesEl.textContent = '0 lines';
+        if (linesEl) linesEl.textContent = `0 ${t('lines')}`;
 
         if (this.comboIndicator) {
             this.comboIndicator.classList.remove('visible');
@@ -1570,11 +1688,11 @@ class UIManager {
         if (chain > 1) {
             this.comboIndicator.classList.add('visible');
             if (this.comboLabel) {
-                this.comboLabel.textContent = `Combo x${chain}`;
+                this.comboLabel.textContent = `${t('comboX')}${chain}`;
             }
             if (this.comboBonus) {
                 const bonusPercent = (chain - 1) * 10;
-                this.comboBonus.textContent = `+${bonusPercent}% streak`;
+                this.comboBonus.textContent = `+${bonusPercent}% ${t('streak')}`;
             }
 
             if (chain !== this.lastComboChain) {
@@ -1586,7 +1704,7 @@ class UIManager {
             this.comboIndicator.classList.remove('visible');
             this.comboIndicator.classList.remove('combo-burst');
             if (this.comboLabel) {
-                this.comboLabel.textContent = 'Combo ready';
+                this.comboLabel.textContent = t('comboReady');
             }
             if (this.comboBonus) {
                 this.comboBonus.textContent = '';
@@ -1595,6 +1713,12 @@ class UIManager {
 
         this.lastComboChain = chain;
         this.scheduleBoardScaleUpdate();
+    }
+    
+    updateComboTooltip() {
+        if (this.comboIndicator) {
+            this.comboIndicator.title = t('comboHelp');
+        }
     }
 
     flashScoreCard() {
@@ -1608,13 +1732,13 @@ class UIManager {
     getLineClearTitle(linesCleared) {
         switch (linesCleared) {
             case 1:
-                return 'Line break';
+                return t('lineBreak');
             case 2:
-                return 'Double break';
+                return t('doubleBreak');
             case 3:
-                return 'Triple break';
+                return t('tripleBreak');
             default:
-                return 'Mega clear';
+                return t('megaClear');
         }
     }
 
@@ -1633,20 +1757,20 @@ class UIManager {
 
         const points = document.createElement('div');
         points.className = 'clear-event__points';
-        points.textContent = `+${formatNumber(detail.totalScore)} pts`;
+        points.textContent = `+${formatNumber(detail.totalScore)} ${t('pts')}`;
         entry.appendChild(points);
 
         const perLine = document.createElement('div');
         perLine.className = 'clear-event__per-line';
-        perLine.textContent = `${formatNumber(detail.perLineScore)} pts / line`;
+        perLine.textContent = `${formatNumber(detail.perLineScore)} ${t('ptsPerLine')}`;
         entry.appendChild(perLine);
 
         const bonusChips = [];
         if (detail.multiMultiplier > 1) {
-            bonusChips.push(`Multi +${detail.multiBonusPercent}%`);
+            bonusChips.push(`${t('multiBonus')} +${detail.multiBonusPercent}%`);
         }
         if (detail.comboMultiplier > 1) {
-            bonusChips.push(`Streak +${detail.streakBonusPercent}%`);
+            bonusChips.push(`${t('streakBonus')} +${detail.streakBonusPercent}%`);
         }
 
         if (bonusChips.length) {
@@ -2127,9 +2251,30 @@ class UIManager {
             const colorInput = document.getElementById(`coop-color-${i}`);
             if (colorInput) {
                 colorInput.addEventListener('change', (e) => {
-                    gameState.settings.colors[i] = e.target.value;
-                    const badge = card.querySelector('.player-color-badge');
-                    if (badge) badge.style.background = e.target.value;
+                    const selectedColor = e.target.value;
+                    
+                    // Check if color is too dark
+                    if (isColorTooDark(selectedColor)) {
+                        const brighterColor = suggestBrighterColor(selectedColor);
+                        const confirmMsg = currentLanguage === 'ru' 
+                            ? `Выбранный цвет слишком тёмный и может быть плохо виден на игровом поле. Использовать более яркий цвет вместо этого?`
+                            : `The selected color is too dark and may be hard to see on the game board. Use a brighter color instead?`;
+                        
+                        if (confirm(confirmMsg)) {
+                            e.target.value = brighterColor;
+                            gameState.settings.colors[i] = brighterColor;
+                            const badge = card.querySelector('.player-color-badge');
+                            if (badge) badge.style.background = brighterColor;
+                        } else {
+                            gameState.settings.colors[i] = selectedColor;
+                            const badge = card.querySelector('.player-color-badge');
+                            if (badge) badge.style.background = selectedColor;
+                        }
+                    } else {
+                        gameState.settings.colors[i] = selectedColor;
+                        const badge = card.querySelector('.player-color-badge');
+                        if (badge) badge.style.background = selectedColor;
+                    }
                 });
             }
         }
@@ -2217,7 +2362,14 @@ class UIManager {
         });
 
         networkManager.on('error', (message) => {
-            this.showStyledMessage('Network Error', message, 'error');
+            // Provide user-friendly error messages
+            let userMessage = message;
+            if (message.includes('Socket.io client not available') || message.includes('Socket.io client')) {
+                userMessage = t('socketIoNotAvailable');
+            } else if (message.includes('Connection failed') || message.includes('failed')) {
+                userMessage = t('serverUnavailable');
+            }
+            this.showStyledMessage(t('networkError'), userMessage, 'error');
         });
 
         // Connect to server
@@ -2233,13 +2385,13 @@ class UIManager {
         
         switch(status) {
             case 'connecting':
-                text.textContent = 'Connecting to server...';
+                text.textContent = t('connectingToServer');
                 break;
             case 'connected':
-                text.textContent = 'Connected to server';
+                text.textContent = t('connectedToServer');
                 break;
             case 'disconnected':
-                text.textContent = 'Server not available';
+                text.textContent = t('disconnectedFromServer');
                 break;
         }
     }
@@ -2249,7 +2401,10 @@ class UIManager {
         container.innerHTML = '';
         
         if (rooms.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">No rooms available. Create one to start!</p>';
+            container.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">
+                <strong>${t('noRoomsAvailable')}</strong><br>
+                ${t('createRoomPrompt')}
+            </p>`;
         } else {
             rooms.forEach(room => {
                 const roomDiv = document.createElement('div');
@@ -2655,6 +2810,24 @@ class UIManager {
             const colorInput = document.getElementById(`color-${i}`);
             if (colorInput) {
                 newColors[i] = colorInput.value;
+            }
+        }
+        
+        // Check for dark colors and warn user
+        const darkColorWarnings = [];
+        for (let i = 0; i < numPlayersToSave; i++) {
+            if (newColors[i] && isColorTooDark(newColors[i])) {
+                darkColorWarnings.push(`${t('player')} ${i + 1}`);
+            }
+        }
+        
+        if (darkColorWarnings.length > 0) {
+            const warningMsg = currentLanguage === 'ru'
+                ? `Следующие игроки используют слишком тёмные цвета, которые могут быть плохо видны: ${darkColorWarnings.join(', ')}. Продолжить?`
+                : `The following players are using very dark colors that may be hard to see: ${darkColorWarnings.join(', ')}. Continue anyway?`;
+            
+            if (!confirm(warningMsg)) {
+                return;
             }
         }
 
