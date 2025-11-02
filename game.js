@@ -458,11 +458,14 @@ class UIManager {
         this.touchControls = document.getElementById('touch-controls');
         this.touchStatus = document.getElementById('touch-status');
         this.touchPlayerIndex = 0;
+        this.teamStats = document.getElementById('team-stats');
         this.scoreCard = document.getElementById('team-score-card');
         this.comboIndicator = document.getElementById('combo-indicator');
         this.comboLabel = document.getElementById('combo-label');
         this.comboBonus = document.getElementById('combo-bonus');
         this.clearFeed = document.getElementById('clear-feed');
+        this.gameControls = document.querySelector('.game-controls');
+        this.pendingScaleFrame = null;
         this.lastComboChain = 0;
 
         this.moveRepeatInterval = 90;
@@ -471,6 +474,7 @@ class UIManager {
 
         this.setupEventListeners();
         this.initTouchControls();
+        window.addEventListener('resize', () => this.handleResize());
     }
 
     setupEventListeners() {
@@ -620,6 +624,11 @@ class UIManager {
         Object.values(this.screens).forEach(screen => screen.classList.remove('active'));
         this.screens[screenName].classList.add('active');
 
+        if (screenName === 'gameScreen') {
+            this.updateLayoutDensity();
+            this.scheduleBoardScaleUpdate();
+        }
+
         const teamStats = document.getElementById('team-stats');
         if (teamStats) {
             if (screenName === 'gameScreen') {
@@ -680,6 +689,11 @@ class UIManager {
         canvas.id = 'game-canvas';
         canvas.width = gameState.boardWidth * BLOCK_SIZE;
         canvas.height = BOARD_HEIGHT * BLOCK_SIZE;
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
+        canvas.style.maxWidth = `${canvas.width}px`;
+        canvas.style.maxHeight = `${canvas.height}px`;
+        boardWrapper.style.setProperty('--board-max-width', `${canvas.width}px`);
         boardWrapper.appendChild(canvas);
 
         const previewsWrapper = document.createElement('div');
@@ -717,6 +731,7 @@ class UIManager {
 
         this.showScreen('gameScreen');
         this.refreshTouchStatus();
+        this.scheduleBoardScaleUpdate();
         requestAnimationFrame((time) => this.gameLoop(time));
     }
 
@@ -889,6 +904,7 @@ class UIManager {
         if (linesEl) linesEl.textContent = `${formatNumber(lines)} lines`;
 
         this.updateComboIndicator();
+        this.scheduleBoardScaleUpdate();
     }
 
     resetTeamStatsDisplay() {
@@ -959,6 +975,7 @@ class UIManager {
         }
 
         this.lastComboChain = chain;
+        this.scheduleBoardScaleUpdate();
     }
 
     flashScoreCard() {
@@ -1036,8 +1053,110 @@ class UIManager {
 
         setTimeout(() => {
             entry.classList.add('clear-event--fade');
-            setTimeout(() => entry.remove(), 600);
+            setTimeout(() => {
+                entry.remove();
+                this.scheduleBoardScaleUpdate();
+            }, 600);
         }, 3600);
+
+        this.scheduleBoardScaleUpdate();
+    }
+
+    handleResize() {
+        if (!this.screens.gameScreen.classList.contains('active')) {
+            return;
+        }
+
+        this.updateLayoutDensity();
+        this.updateBoardScale();
+    }
+
+    updateLayoutDensity() {
+        const gameScreen = this.screens.gameScreen;
+        if (!gameScreen) return;
+
+        const compact = window.innerWidth < 1100 || window.innerHeight < 820;
+        gameScreen.classList.toggle('compact', compact);
+    }
+
+    scheduleBoardScaleUpdate() {
+        if (this.pendingScaleFrame) return;
+
+        this.pendingScaleFrame = requestAnimationFrame(() => {
+            this.pendingScaleFrame = null;
+            this.updateBoardScale();
+        });
+    }
+
+    updateBoardScale() {
+        const canvas = document.getElementById('game-canvas');
+        const boardWrapper = document.getElementById('shared-board');
+        if (!canvas || !boardWrapper) {
+            return;
+        }
+
+        const boardWidth = canvas.width;
+        const boardHeight = canvas.height;
+
+        const parentRect = boardWrapper.parentElement ? boardWrapper.parentElement.getBoundingClientRect() : null;
+        const gameScreenRect = this.screens.gameScreen ? this.screens.gameScreen.getBoundingClientRect() : null;
+        const bodyStyles = window.getComputedStyle(document.body);
+        const horizontalPadding = parseFloat(bodyStyles.paddingLeft) + parseFloat(bodyStyles.paddingRight);
+        const verticalPadding = parseFloat(bodyStyles.paddingTop) + parseFloat(bodyStyles.paddingBottom);
+        const layoutWidth = parentRect ? parentRect.width : (gameScreenRect ? gameScreenRect.width : window.innerWidth);
+        const viewportWidth = window.innerWidth - horizontalPadding;
+        const constrainedViewport = Math.max(160, viewportWidth);
+        const availableWidth = Math.min(layoutWidth, constrainedViewport);
+
+        let usedHeight = verticalPadding;
+        const header = document.querySelector('header');
+        if (header) {
+            usedHeight += header.getBoundingClientRect().height;
+        }
+        const screenStyles = this.screens.gameScreen ? window.getComputedStyle(this.screens.gameScreen) : null;
+        const paddingTop = screenStyles ? parseFloat(screenStyles.paddingTop) : 0;
+        const paddingBottom = screenStyles ? parseFloat(screenStyles.paddingBottom) : 0;
+        const gapY = screenStyles ? parseFloat(screenStyles.rowGap || screenStyles.gap || 0) : 0;
+
+        usedHeight += paddingTop + paddingBottom;
+
+        let gapSegments = 0;
+
+        if (this.teamStats && this.teamStats.classList.contains('visible')) {
+            usedHeight += this.teamStats.getBoundingClientRect().height;
+            gapSegments += 1;
+        }
+
+        if (this.gameControls) {
+            usedHeight += this.gameControls.getBoundingClientRect().height;
+            gapSegments += 1;
+        }
+
+        if (this.touchControls && this.touchControls.classList.contains('visible')) {
+            usedHeight += this.touchControls.getBoundingClientRect().height;
+            gapSegments += 1;
+        }
+
+        usedHeight += gapSegments * gapY;
+
+        let availableHeight = window.innerHeight - usedHeight;
+        if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
+            availableHeight = window.innerHeight * 0.35;
+        }
+        availableHeight = Math.max(60, availableHeight);
+
+        const widthScale = availableWidth / boardWidth;
+        const heightScale = availableHeight / boardHeight;
+        const scale = Math.min(1, widthScale, heightScale);
+
+        const displayWidth = Math.max(1, Math.floor(boardWidth * scale));
+        const displayHeight = Math.max(1, Math.floor(boardHeight * scale));
+
+        boardWrapper.style.setProperty('--board-max-width', `${displayWidth}px`);
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+        canvas.style.maxWidth = `${boardWidth}px`;
+        canvas.style.maxHeight = `${boardHeight}px`;
     }
 
     getActionForCode(player, code) {
