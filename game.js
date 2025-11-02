@@ -607,6 +607,9 @@ class UIManager {
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
         this.previousScreen = 'mainMenu'; // Track previous screen for settings navigation
+        this.isOnlineMode = false; // Flag for online multiplayer mode
+        this.networkPlayers = {}; // Map of network player IDs to local indices
+        this.localPlayerIndex = -1; // Local player index in online mode
 
         this.moveRepeatInterval = 90;
         this.softDropInitialDelay = 0;
@@ -1658,6 +1661,11 @@ class UIManager {
 
         gameState.players.forEach(player => {
             if (player.gameOver) return;
+            
+            // In online mode, only allow local player to be controlled
+            if (this.isOnlineMode && player.id !== this.localPlayerIndex) {
+                return;
+            }
 
             const action = this.getActionForCode(player, code);
             if (!action) return;
@@ -1718,6 +1726,11 @@ class UIManager {
 
         gameState.players.forEach(player => {
             if (player.gameOver) return;
+            
+            // In online mode, only allow local player to be controlled
+            if (this.isOnlineMode && player.id !== this.localPlayerIndex) {
+                return;
+            }
 
             const action = this.getActionForCode(player, code);
             if (!action) return;
@@ -1760,6 +1773,12 @@ class UIManager {
         gameState.players = [];
         gameState.inputStates = new Map();
         resetSharedStats();
+        
+        // Reset online mode flags
+        this.isOnlineMode = false;
+        this.networkPlayers = {};
+        this.localPlayerIndex = -1;
+        
         this.showScreen('mainMenu');
         this.refreshTouchStatus();
 
@@ -2136,6 +2155,7 @@ class UIManager {
         // Store network player info for synchronization
         this.networkPlayers = {};
         this.localPlayerIndex = -1;
+        this.isOnlineMode = true; // Flag to indicate online mode
         
         // Update game state with player colors from network and map IDs
         data.players.forEach((netPlayer, index) => {
@@ -2161,32 +2181,14 @@ class UIManager {
     setupOnlineSync() {
         if (!networkManager.socket) return;
         
-        // Store original player update methods to intercept actions
-        const originalHandleKeyPress = this.handleKeyPress.bind(this);
-        const originalHandleKeyRelease = this.handleKeyRelease.bind(this);
-        
-        // Override to only allow local player control in online mode
-        this.handleKeyPress = (e) => {
-            if (this.localPlayerIndex >= 0) {
-                // Only process input for local player
-                const player = gameState.players[this.localPlayerIndex];
-                if (player && !player.gameOver) {
-                    originalHandleKeyPress(e);
-                }
-            }
-        };
-        
-        this.handleKeyRelease = (e) => {
-            if (this.localPlayerIndex >= 0) {
-                const player = gameState.players[this.localPlayerIndex];
-                if (player && !player.gameOver) {
-                    originalHandleKeyRelease(e);
-                }
-            }
-        };
-        
         // Listen for remote player inputs
         networkManager.on('playerInput', (data) => {
+            // Validate input data
+            if (!data || typeof data.playerId !== 'string' || typeof data.action !== 'string') {
+                console.warn('Invalid player input data received:', data);
+                return;
+            }
+            
             const playerIndex = this.networkPlayers[data.playerId];
             if (playerIndex !== undefined && playerIndex !== this.localPlayerIndex) {
                 const player = gameState.players[playerIndex];
@@ -2194,7 +2196,9 @@ class UIManager {
                     // Apply the action from remote player
                     switch (data.action) {
                         case 'move':
-                            player.move(data.direction);
+                            if (typeof data.direction === 'number') {
+                                player.move(data.direction);
+                            }
                             break;
                         case 'rotate':
                             player.rotate();
