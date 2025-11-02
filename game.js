@@ -606,7 +606,7 @@ class UIManager {
         this.clearFeed = document.getElementById('clear-feed');
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
-        this.previousScreen = 'mainMenu'; // Track previous screen for settings navigation
+        this.previousScreen = 'mainMenu'; // Track previous screen for settings navigation (matches screen key)
         this.isOnlineMode = false; // Flag for online multiplayer mode
         this.networkPlayers = {}; // Map of network player IDs to local indices
         this.localPlayerIndex = -1; // Local player index in online mode
@@ -619,6 +619,16 @@ class UIManager {
         this.initTouchControls();
         this.initGamepads();
         window.addEventListener('resize', () => this.handleResize());
+    }
+    
+    // Helper method to check if a player can be controlled locally
+    isPlayerControllable(player) {
+        if (player.gameOver) return false;
+        // In online mode, only allow local player to be controlled
+        if (this.isOnlineMode && player.id !== this.localPlayerIndex) {
+            return false;
+        }
+        return true;
     }
 
     initGamepads() {
@@ -1660,12 +1670,7 @@ class UIManager {
         let boardNeedsRedraw = false;
 
         gameState.players.forEach(player => {
-            if (player.gameOver) return;
-            
-            // In online mode, only allow local player to be controlled
-            if (this.isOnlineMode && player.id !== this.localPlayerIndex) {
-                return;
-            }
+            if (!this.isPlayerControllable(player)) return;
 
             const action = this.getActionForCode(player, code);
             if (!action) return;
@@ -1725,12 +1730,7 @@ class UIManager {
         let handled = false;
 
         gameState.players.forEach(player => {
-            if (player.gameOver) return;
-            
-            // In online mode, only allow local player to be controlled
-            if (this.isOnlineMode && player.id !== this.localPlayerIndex) {
-                return;
-            }
+            if (!this.isPlayerControllable(player)) return;
 
             const action = this.getActionForCode(player, code);
             if (!action) return;
@@ -2181,11 +2181,19 @@ class UIManager {
     setupOnlineSync() {
         if (!networkManager.socket) return;
         
+        const VALID_ACTIONS = ['move', 'rotate', 'drop', 'hardDrop'];
+        
         // Listen for remote player inputs
         networkManager.on('playerInput', (data) => {
             // Validate input data
             if (!data || typeof data.playerId !== 'string' || typeof data.action !== 'string') {
                 console.warn('Invalid player input data received:', data);
+                return;
+            }
+            
+            // Validate action type
+            if (!VALID_ACTIONS.includes(data.action)) {
+                console.warn('Invalid action type received:', data.action);
                 return;
             }
             
@@ -2196,8 +2204,11 @@ class UIManager {
                     // Apply the action from remote player
                     switch (data.action) {
                         case 'move':
-                            if (typeof data.direction === 'number') {
+                            // Validate direction is -1 or 1
+                            if (typeof data.direction === 'number' && (data.direction === -1 || data.direction === 1)) {
                                 player.move(data.direction);
+                            } else {
+                                console.warn('Invalid move direction:', data.direction);
                             }
                             break;
                         case 'rotate':
