@@ -380,9 +380,9 @@ const MIN_COLOR_BRIGHTNESS = 80;
 function getColorBrightness(hexColor) {
     // Convert hex to RGB
     const hex = hexColor.replace('#', '');
-    const r = parseInt(hex.substr(0, 2), 16);
-    const g = parseInt(hex.substr(2, 2), 16);
-    const b = parseInt(hex.substr(4, 2), 16);
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
     
     // Calculate perceived brightness (ITU-R BT.709)
     return (r * 0.2126 + g * 0.7152 + b * 0.0722);
@@ -394,9 +394,9 @@ function isColorTooDark(hexColor) {
 
 function suggestBrighterColor(hexColor) {
     const hex = hexColor.replace('#', '');
-    let r = parseInt(hex.substr(0, 2), 16);
-    let g = parseInt(hex.substr(2, 2), 16);
-    let b = parseInt(hex.substr(4, 2), 16);
+    let r = parseInt(hex.substring(0, 2), 16);
+    let g = parseInt(hex.substring(2, 4), 16);
+    let b = parseInt(hex.substring(4, 6), 16);
     
     // Increase brightness while maintaining hue
     const currentBrightness = getColorBrightness(hexColor);

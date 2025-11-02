@@ -873,7 +873,8 @@ canvas {
     }
 }
 
-/* Alternative: Show touch controls on small screens regardless of input type */
+/* Alternative: Also show touch controls on small screens regardless of input type
+   This ensures touch controls are available on tablets and convertible laptops */
 @media (max-width: 768px) {
     #touch-controls.visible {
         display: flex;
