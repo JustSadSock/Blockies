@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,6 +21,13 @@ app.use(express.static(path.join(__dirname)));
 // Game state
 const rooms = new Map();
 const players = new Map();
+const sessions = new Map();
+
+const RECONNECT_GRACE_MS = 30000;
+
+function broadcastRoomsList() {
+    io.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
+}
 
 // Available colors for players
 const AVAILABLE_COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
@@ -64,11 +72,97 @@ function createPieceDealer(seed) {
     };
 }
 
+function generateSessionId() {
+    return crypto.randomBytes(8).toString('hex');
+}
+
+function createSession(defaultName) {
+    const sessionId = generateSessionId();
+    const session = {
+        id: sessionId,
+        name: defaultName || `Player ${sessions.size + 1}`,
+        roomId: null,
+        color: null,
+        ready: false,
+        connected: false,
+        socketId: null,
+        disconnectTimer: null
+    };
+    sessions.set(sessionId, session);
+    return session;
+}
+
+function getSession(sessionId) {
+    if (!sessionId) return null;
+    return sessions.get(sessionId) || null;
+}
+
+function attachSessionToSocket(session, socket) {
+    if (!session) return;
+
+    const player = players.get(socket.id);
+    if (player) {
+        player.sessionId = session.id;
+        player.name = session.name;
+        player.roomId = session.roomId;
+    }
+
+    session.socketId = socket.id;
+    session.connected = true;
+    session.disconnectTimer && clearTimeout(session.disconnectTimer);
+    session.disconnectTimer = null;
+}
+
+function scheduleSessionCleanup(sessionId) {
+    const session = getSession(sessionId);
+    if (!session || session.disconnectTimer) {
+        return;
+    }
+
+    session.disconnectTimer = setTimeout(() => {
+        finalizeSessionRoomCleanup(sessionId);
+    }, RECONNECT_GRACE_MS);
+}
+
+function finalizeSessionRoomCleanup(sessionId) {
+    const session = getSession(sessionId);
+    if (!session) return;
+
+    if (!session.roomId) {
+        session.disconnectTimer = null;
+        return;
+    }
+
+    const room = rooms.get(session.roomId);
+    if (room) {
+        const removal = room.removePlayer(sessionId);
+        if (removal.removed) {
+            if (room.players.length === 0) {
+                rooms.delete(room.id);
+            } else {
+                io.to(room.id).emit('room-update', room.getFullInfo());
+                if (removal.hostChanged) {
+                    io.to(room.id).emit('host-changed', {
+                        hostId: room.hostSocketId,
+                        hostSessionId: room.hostSessionId
+                    });
+                }
+            }
+            broadcastRoomsList();
+        }
+    }
+
+    session.roomId = null;
+    session.color = null;
+    session.ready = false;
+    session.disconnectTimer = null;
+}
+
 class Room {
-    constructor(id, name, hostId) {
+    constructor(id, name, hostSessionId) {
         this.id = id;
         this.name = name;
-        this.hostId = hostId;
+        this.hostSessionId = hostSessionId;
         this.players = [];
         this.maxPlayers = 4;
         this.gameStarted = false;
@@ -78,72 +172,120 @@ class Room {
         this.currentGame = null;
     }
 
-    addPlayer(playerId, playerName) {
-        if (this.players.length >= this.maxPlayers) {
+    get hostSocketId() {
+        const host = this.players.find(p => p.sessionId === this.hostSessionId && p.connected && p.socketId);
+        return host ? host.socketId : null;
+    }
+
+    getPlayerBySession(sessionId) {
+        return this.players.find(p => p.sessionId === sessionId) || null;
+    }
+
+    getPlayerBySocket(socketId) {
+        return this.players.find(p => p.socketId === socketId) || null;
+    }
+
+    pickNextHost() {
+        const connectedPlayer = this.players.find(p => p.connected);
+        const originalHost = this.hostSessionId;
+        if (connectedPlayer) {
+            this.hostSessionId = connectedPlayer.sessionId;
+        } else if (this.players.length > 0) {
+            this.hostSessionId = this.players[0].sessionId;
+        }
+        return originalHost !== this.hostSessionId;
+    }
+
+    addOrUpdatePlayer(sessionId, socketId, playerName, preferredColor = null) {
+        let player = this.getPlayerBySession(sessionId);
+        let rejoined = false;
+
+        if (player) {
+            player.socketId = socketId;
+            player.name = playerName;
+            player.connected = true;
+            player.ready = false;
+            rejoined = true;
+        } else {
+            if (this.players.length >= this.maxPlayers) {
+                return { success: false, rejoined: false };
+            }
+
+            const reservedColor = preferredColor && !this.usedColors.has(preferredColor)
+                ? preferredColor
+                : AVAILABLE_COLORS.find(color => !this.usedColors.has(color));
+
+            if (!reservedColor) {
+                return { success: false, rejoined: false };
+            }
+
+            player = {
+                sessionId,
+                socketId,
+                name: playerName,
+                color: reservedColor,
+                ready: false,
+                connected: true
+            };
+            this.players.push(player);
+            this.usedColors.add(reservedColor);
+        }
+
+        return { success: true, rejoined };
+    }
+
+    markPlayerDisconnected(sessionId) {
+        const player = this.getPlayerBySession(sessionId);
+        if (!player) {
+            return { updated: false, hostChanged: false };
+        }
+
+        player.connected = false;
+        player.socketId = null;
+        player.ready = false;
+        const hostChanged = player.sessionId === this.hostSessionId && this.pickNextHost();
+        return { updated: true, hostChanged };
+    }
+
+    removePlayer(sessionId) {
+        const index = this.players.findIndex(p => p.sessionId === sessionId);
+        if (index === -1) {
+            return { removed: false, hostChanged: false };
+        }
+
+        const [player] = this.players.splice(index, 1);
+        this.usedColors.delete(player.color);
+        const hostChanged = player.sessionId === this.hostSessionId && this.pickNextHost();
+        return { removed: true, hostChanged };
+    }
+
+    setPlayerColor(sessionId, color) {
+        if (!color || this.usedColors.has(color)) {
             return false;
         }
 
-        const availableColor = AVAILABLE_COLORS.find(color => !this.usedColors.has(color));
-        if (!availableColor) {
+        const player = this.getPlayerBySession(sessionId);
+        if (!player) {
             return false;
         }
 
-        this.players.push({
-            id: playerId,
-            name: playerName,
-            color: availableColor,
-            ready: false
-        });
-        this.usedColors.add(availableColor);
+        this.usedColors.delete(player.color);
+        player.color = color;
+        this.usedColors.add(color);
         return true;
     }
 
-    removePlayer(playerId) {
-        const playerIndex = this.players.findIndex(p => p.id === playerId);
-        if (playerIndex !== -1) {
-            const player = this.players[playerIndex];
-            this.usedColors.delete(player.color);
-            this.players.splice(playerIndex, 1);
-
-            let hostChanged = false;
-
-            // If host left, assign new host
-            if (this.hostId === playerId && this.players.length > 0) {
-                this.hostId = this.players[0].id;
-                hostChanged = true;
-            }
-
-            return { removed: true, hostChanged };
-        }
-        return { removed: false, hostChanged: false };
-    }
-
-    setPlayerColor(playerId, color) {
-        if (this.usedColors.has(color)) {
+    setPlayerReady(sessionId, ready) {
+        const player = this.getPlayerBySession(sessionId);
+        if (!player || !player.connected) {
             return false;
         }
-
-        const player = this.players.find(p => p.id === playerId);
-        if (player) {
-            this.usedColors.delete(player.color);
-            player.color = color;
-            this.usedColors.add(color);
-            return true;
-        }
-        return false;
-    }
-
-    setPlayerReady(playerId, ready) {
-        const player = this.players.find(p => p.id === playerId);
-        if (player) {
-            player.ready = ready;
-            return true;
-        }
-        return false;
+        player.ready = ready;
+        return true;
     }
 
     allPlayersReady() {
-        return this.players.length > 0 && this.players.every(p => p.ready);
+        return this.players.length > 0 && this.players.every(p => p.connected && p.ready);
     }
 
     beginGame(seed) {
@@ -167,7 +309,8 @@ class Room {
             stateSequence: 0,
             inputSequence: 0,
             lastStatePayload: null,
-            lastBroadcastAt: 0
+            lastBroadcastAt: 0,
+            lastInputByPlayer: {}
         };
 
         return {
@@ -183,6 +326,13 @@ class Room {
         return this.currentGame.dealer.nextBatch(count);
     }
 
+    recordPlayerInput(sessionId, sequence) {
+        if (!this.currentGame || typeof sequence !== 'number') {
+            return;
+        }
+        this.currentGame.lastInputByPlayer[sessionId] = sequence;
+    }
+
     resetGameState() {
         this.gameStarted = false;
         this.currentGame = null;
@@ -195,7 +345,8 @@ class Room {
         return {
             id: this.id,
             name: this.name,
-            hostId: this.hostId,
+            hostId: this.hostSocketId,
+            hostSessionId: this.hostSessionId,
             players: this.players.length,
             maxPlayers: this.maxPlayers,
             gameStarted: this.gameStarted,
@@ -207,8 +358,16 @@ class Room {
         return {
             id: this.id,
             name: this.name,
-            hostId: this.hostId,
-            players: this.players,
+            hostId: this.hostSocketId,
+            hostSessionId: this.hostSessionId,
+            players: this.players.map(p => ({
+                id: p.socketId,
+                sessionId: p.sessionId,
+                name: p.name,
+                color: p.color,
+                ready: p.ready,
+                connected: p.connected
+            })),
             maxPlayers: this.maxPlayers,
             gameStarted: this.gameStarted,
             isPrivate: this.isPrivate,
@@ -221,42 +380,121 @@ class Room {
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
 
-    const broadcastRoomsList = () => {
-        io.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
-    };
-
+    const defaultName = `Player ${players.size + 1}`;
     players.set(socket.id, {
         id: socket.id,
-        name: `Player ${players.size + 1}`,
+        sessionId: null,
+        name: defaultName,
         roomId: null
     });
 
-    // Send initial rooms list
     socket.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
 
-    // Set player nickname
-    socket.on('set-nickname', (nickname) => {
+    socket.on('identify', (payload = {}) => {
+        const providedSessionId = typeof payload.sessionId === 'string'
+            ? payload.sessionId.trim()
+            : null;
+
+        let session = getSession(providedSessionId);
+        if (!session) {
+            session = createSession(defaultName);
+        }
+
+        if (payload.nickname && payload.nickname.trim()) {
+            session.name = payload.nickname.trim().substring(0, 20);
+        }
+
+        attachSessionToSocket(session, socket);
+
         const player = players.get(socket.id);
-        if (player && nickname && nickname.trim()) {
-            player.name = nickname.trim().substring(0, 20); // Limit to 20 chars
-            
-            // Update nickname in room if player is in one
-            if (player.roomId) {
-                const room = rooms.get(player.roomId);
-                if (room) {
-                    const roomPlayer = room.players.find(p => p.id === socket.id);
+        if (player) {
+            player.sessionId = session.id;
+            player.name = session.name;
+            player.roomId = session.roomId;
+        }
+
+        socket.emit('session-confirmed', {
+            sessionId: session.id,
+            name: session.name,
+            restoredRoom: !!session.roomId
+        });
+
+        if (session.roomId) {
+            const room = rooms.get(session.roomId);
+            if (room) {
+                const result = room.addOrUpdatePlayer(session.id, socket.id, session.name, session.color);
+                if (result.success) {
+                    const info = room.getFullInfo();
+                    const roomPlayer = room.getPlayerBySession(session.id);
                     if (roomPlayer) {
-                        roomPlayer.name = player.name;
-                        io.to(player.roomId).emit('room-update', room.getFullInfo());
+                        session.color = roomPlayer.color;
+                    }
+                    if (player) {
+                        player.roomId = room.id;
+                    }
+                    socket.join(room.id);
+                    socket.emit('room-joined', info);
+                    io.to(room.id).emit('room-update', info);
+                    broadcastRoomsList();
+
+                    if (room.gameStarted && room.currentGame?.lastStatePayload) {
+                        socket.emit('game-start', {
+                            players: info.players,
+                            pieceSeed: room.currentGame.seed,
+                            pieceSequence: room.currentGame.initialPieces,
+                            hostId: info.hostId,
+                            hostSessionId: info.hostSessionId,
+                            resumed: true
+                        });
+                        socket.emit('game-state', {
+                            ...room.currentGame.lastStatePayload,
+                            serverTime: Date.now()
+                        });
+                    }
+                } else {
+                    session.roomId = null;
+                    if (player) {
+                        player.roomId = null;
                     }
                 }
+            } else {
+                session.roomId = null;
+                if (player) {
+                    player.roomId = null;
+                }
             }
-            
-            console.log(`Player ${socket.id} set nickname to: ${player.name}`);
         }
     });
 
-    // Create room
+    socket.on('set-nickname', (nickname) => {
+        if (!nickname || !nickname.trim()) {
+            return;
+        }
+
+        const player = players.get(socket.id);
+        if (!player) {
+            return;
+        }
+
+        const session = getSession(player.sessionId) || createSession(defaultName);
+        const sanitized = nickname.trim().substring(0, 20);
+        player.name = sanitized;
+        session.name = sanitized;
+
+        if (player.roomId) {
+            const room = rooms.get(player.roomId);
+            if (room) {
+                const roomPlayer = room.getPlayerBySession(session.id);
+                if (roomPlayer) {
+                    roomPlayer.name = sanitized;
+                    io.to(room.id).emit('room-update', room.getFullInfo());
+                }
+            }
+        }
+
+        console.log(`Player ${socket.id} set nickname to: ${sanitized}`);
+    });
+
     socket.on('create-room', (data) => {
         const payload = data || {};
         const isPrivate = !!payload.isPrivate;
@@ -280,28 +518,53 @@ io.on('connection', (socket) => {
             }
         }
 
+        const player = players.get(socket.id);
+        if (!player) {
+            return;
+        }
+
+        let session = getSession(player.sessionId);
+        if (!session) {
+            session = createSession(player.name);
+            attachSessionToSocket(session, socket);
+            player.sessionId = session.id;
+        }
+
         const roomId = `room_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const roomName = payload.name || `Room ${rooms.size + 1}`;
-        const room = new Room(roomId, roomName, socket.id);
+        const room = new Room(roomId, roomName, session.id);
         room.isPrivate = isPrivate;
         room.accessCode = accessCode;
 
-        const player = players.get(socket.id);
-        if (player) {
-            player.roomId = roomId;
-            room.addPlayer(socket.id, player.name);
+        const result = room.addOrUpdatePlayer(session.id, socket.id, session.name, session.color);
+        if (!result.success) {
+            socket.emit('error', { message: 'Unable to reserve a slot in the new room.' });
+            return;
+        }
+
+        const roomPlayer = room.getPlayerBySession(session.id);
+        if (roomPlayer) {
+            session.color = roomPlayer.color;
         }
 
         rooms.set(roomId, room);
+        session.roomId = roomId;
+        session.ready = false;
+        if (session.disconnectTimer) {
+            clearTimeout(session.disconnectTimer);
+            session.disconnectTimer = null;
+        }
+
+        player.roomId = roomId;
         socket.join(roomId);
 
-        socket.emit('room-created', room.getFullInfo());
+        const info = room.getFullInfo();
+        socket.emit('room-created', info);
         broadcastRoomsList();
 
         console.log(`Room created: ${roomName} (${roomId})`);
     });
 
-    // Join room
     socket.on('join-room', (data) => {
         const payload = typeof data === 'object' && data !== null ? data : { roomId: data };
         const roomId = payload.roomId;
@@ -311,8 +574,7 @@ io.on('connection', (socket) => {
 
         const room = rooms.get(roomId);
         const player = players.get(socket.id);
-
-        if (!room) {
+        if (!room || !player) {
             socket.emit('error', { message: 'Room not found' });
             return;
         }
@@ -329,53 +591,88 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if (player) {
-            const success = room.addPlayer(socket.id, player.name);
-            if (success) {
-                player.roomId = roomId;
-                socket.join(roomId);
-
-                // Notify all players in room
-                io.to(roomId).emit('room-update', room.getFullInfo());
-                socket.emit('room-joined', room.getFullInfo());
-                broadcastRoomsList();
-
-                console.log(`${player.name} joined room ${room.name}`);
-            } else {
-                socket.emit('error', { message: 'Room is full' });
-            }
+        let session = getSession(player.sessionId);
+        if (!session) {
+            session = createSession(player.name);
+            attachSessionToSocket(session, socket);
+            player.sessionId = session.id;
         }
+
+        const result = room.addOrUpdatePlayer(session.id, socket.id, session.name, session.color);
+        if (!result.success) {
+            socket.emit('error', { message: 'Room is full' });
+            return;
+        }
+
+        const roomPlayer = room.getPlayerBySession(session.id);
+        if (roomPlayer) {
+            session.color = roomPlayer.color;
+        }
+
+        session.roomId = roomId;
+        session.ready = false;
+        if (session.disconnectTimer) {
+            clearTimeout(session.disconnectTimer);
+            session.disconnectTimer = null;
+        }
+
+        player.roomId = roomId;
+        socket.join(roomId);
+
+        const info = room.getFullInfo();
+        socket.emit('room-joined', info);
+        io.to(room.id).emit('room-update', info);
+        broadcastRoomsList();
+
+        console.log(`${session.name} joined room ${room.name}`);
     });
 
-    // Leave room
     socket.on('leave-room', () => {
         const player = players.get(socket.id);
-        if (player && player.roomId) {
-            const room = rooms.get(player.roomId);
-            if (room) {
-                const removal = room.removePlayer(socket.id);
-                if (!removal.removed) {
-                    return;
-                }
-
-                socket.leave(player.roomId);
-
-                if (room.players.length === 0) {
-                    rooms.delete(player.roomId);
-                    broadcastRoomsList();
-                    console.log(`Room ${room.name} deleted (empty)`);
-                } else {
-                    io.to(player.roomId).emit('room-update', room.getFullInfo());
-                    if (removal.hostChanged) {
-                        io.to(room.id).emit('host-changed', { hostId: room.hostId });
-                    }
-                    broadcastRoomsList();
-                }
-
-                player.roomId = null;
-                socket.emit('left-room');
-            }
+        if (!player || !player.roomId) {
+            return;
         }
+
+        const room = rooms.get(player.roomId);
+        const session = getSession(player.sessionId);
+        if (!room || !session) {
+            return;
+        }
+
+        const removal = room.removePlayer(session.id);
+        if (!removal.removed) {
+            return;
+        }
+
+        socket.leave(room.id);
+
+        session.roomId = null;
+        session.ready = false;
+        session.color = null;
+        if (session.disconnectTimer) {
+            clearTimeout(session.disconnectTimer);
+            session.disconnectTimer = null;
+        }
+
+        player.roomId = null;
+        socket.emit('left-room');
+
+        if (room.players.length === 0) {
+            rooms.delete(room.id);
+            broadcastRoomsList();
+            console.log(`Room ${room.name} deleted (empty)`);
+            return;
+        }
+
+        const info = room.getFullInfo();
+        io.to(room.id).emit('room-update', info);
+        if (removal.hostChanged) {
+            io.to(room.id).emit('host-changed', {
+                hostId: info.hostId,
+                hostSessionId: info.hostSessionId
+            });
+        }
+        broadcastRoomsList();
     });
 
     socket.on('kick-player', (targetId) => {
@@ -385,93 +682,126 @@ io.on('connection', (socket) => {
         }
 
         const room = rooms.get(hostPlayer.roomId);
-        if (!room || room.hostId !== socket.id) {
+        const hostSession = getSession(hostPlayer.sessionId);
+        if (!room || !hostSession || room.hostSessionId !== hostSession.id || room.hostSocketId !== socket.id) {
             return;
         }
 
-        if (targetId === socket.id) {
+        const targetEntry = room.getPlayerBySession(targetId) || room.getPlayerBySocket(targetId);
+        if (!targetEntry || targetEntry.sessionId === hostSession.id) {
             return;
         }
 
-        const targetPlayer = players.get(targetId);
-        if (!targetPlayer || targetPlayer.roomId !== room.id) {
-            return;
-        }
-
-        const removal = room.removePlayer(targetId);
+        const removal = room.removePlayer(targetEntry.sessionId);
         if (!removal.removed) {
             return;
         }
 
-        targetPlayer.roomId = null;
+        const targetSession = getSession(targetEntry.sessionId);
+        if (targetSession) {
+            targetSession.roomId = null;
+            targetSession.color = null;
+            targetSession.ready = false;
+            if (targetSession.disconnectTimer) {
+                clearTimeout(targetSession.disconnectTimer);
+                targetSession.disconnectTimer = null;
+            }
+        }
 
-        const targetSocket = io.sockets.sockets.get(targetId);
-        if (targetSocket) {
-            targetSocket.leave(room.id);
-            targetSocket.emit('left-room');
-            targetSocket.emit('kicked', { roomId: room.id, roomName: room.name });
+        if (targetEntry.socketId) {
+            const targetSocket = io.sockets.sockets.get(targetEntry.socketId);
+            if (targetSocket) {
+                targetSocket.leave(room.id);
+                targetSocket.emit('left-room');
+                targetSocket.emit('kicked', { roomId: room.id, roomName: room.name });
+            }
         }
 
         if (room.players.length === 0) {
             rooms.delete(room.id);
-        } else {
-            io.to(room.id).emit('room-update', room.getFullInfo());
-            if (removal.hostChanged) {
-                io.to(room.id).emit('host-changed', { hostId: room.hostId });
-            }
+            broadcastRoomsList();
+            return;
         }
 
+        const info = room.getFullInfo();
+        io.to(room.id).emit('room-update', info);
+        if (removal.hostChanged) {
+            io.to(room.id).emit('host-changed', {
+                hostId: info.hostId,
+                hostSessionId: info.hostSessionId
+            });
+        }
         broadcastRoomsList();
     });
 
-    // Change color
     socket.on('change-color', (color) => {
         const player = players.get(socket.id);
-        if (player && player.roomId) {
-            const room = rooms.get(player.roomId);
-            if (room) {
-                const success = room.setPlayerColor(socket.id, color);
-                if (success) {
-                    io.to(player.roomId).emit('room-update', room.getFullInfo());
-                } else {
-                    socket.emit('error', { message: 'Color already taken' });
-                }
-            }
+        if (!player || !player.roomId) {
+            return;
         }
+
+        const session = getSession(player.sessionId);
+        const room = rooms.get(player.roomId);
+        if (!session || !room) {
+            return;
+        }
+
+        const success = room.setPlayerColor(session.id, color);
+        if (!success) {
+            socket.emit('error', { message: 'Color already taken' });
+            return;
+        }
+
+        const roomPlayer = room.getPlayerBySession(session.id);
+        if (roomPlayer) {
+            session.color = roomPlayer.color;
+        }
+
+        const info = room.getFullInfo();
+        io.to(room.id).emit('room-update', info);
     });
 
-    // Toggle ready
     socket.on('toggle-ready', () => {
         const player = players.get(socket.id);
-        if (player && player.roomId) {
-            const room = rooms.get(player.roomId);
-            if (room) {
-                const currentPlayer = room.players.find(p => p.id === socket.id);
-                if (currentPlayer) {
-                    room.setPlayerReady(socket.id, !currentPlayer.ready);
-                    io.to(player.roomId).emit('room-update', room.getFullInfo());
-                    
-                    // Check if all players are ready
-                    // Allow solo practice (1 player) or multiplayer (2+ players)
-                    if (room.allPlayersReady() && room.players.length >= 1) {
-                        const randomSeed = Math.floor(Math.random() * 0xffffffff);
-                        const { seed: pieceSeed, initialPieces } = room.beginGame(randomSeed);
-                        io.to(player.roomId).emit('game-start', {
-                            players: room.players,
-                            pieceSeed,
-                            pieceSequence: initialPieces,
-                            hostId: room.hostId
-                        });
-                        io.to(player.roomId).emit('room-update', room.getFullInfo());
-                        broadcastRoomsList();
-                        console.log(`Game starting in room ${room.name} with ${room.players.length} player(s)`);
-                    }
-                }
-            }
+        if (!player || !player.roomId) {
+            return;
+        }
+
+        const session = getSession(player.sessionId);
+        const room = rooms.get(player.roomId);
+        if (!session || !room) {
+            return;
+        }
+
+        const roomPlayer = room.getPlayerBySession(session.id);
+        if (!roomPlayer) {
+            return;
+        }
+
+        const readyState = !roomPlayer.ready;
+        room.setPlayerReady(session.id, readyState);
+        session.ready = readyState;
+
+        const info = room.getFullInfo();
+        io.to(room.id).emit('room-update', info);
+
+        if (room.allPlayersReady() && room.players.length >= 1) {
+            const randomSeed = Math.floor(Math.random() * 0xffffffff);
+            const { seed: pieceSeed, initialPieces } = room.beginGame(randomSeed);
+            const updatedInfo = room.getFullInfo();
+            io.to(room.id).emit('game-start', {
+                players: updatedInfo.players,
+                pieceSeed,
+                pieceSequence: initialPieces,
+                hostId: updatedInfo.hostId,
+                hostSessionId: updatedInfo.hostSessionId
+            });
+            io.to(room.id).emit('room-update', updatedInfo);
+            broadcastRoomsList();
+            console.log(`Game starting in room ${room.name} with ${room.players.length} player(s)`);
         }
     });
 
-    // Game state sync
     socket.on('game-state', (data = {}) => {
         const player = players.get(socket.id);
         if (!player || !player.roomId) {
@@ -483,7 +813,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if (socket.id !== room.hostId) {
+        if (socket.id !== room.hostSocketId) {
             return;
         }
 
@@ -495,7 +825,8 @@ io.on('connection', (socket) => {
         room.currentGame.stateSequence = nextSequence;
         room.currentGame.lastStatePayload = {
             ...data,
-            sequence: nextSequence
+            sequence: nextSequence,
+            inputAcks: { ...room.currentGame.lastInputByPlayer }
         };
         room.currentGame.lastBroadcastAt = Date.now();
 
@@ -522,57 +853,75 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Player input
-    socket.on('player-input', (data) => {
+    socket.on('player-input', (data = {}) => {
         const player = players.get(socket.id);
         if (!player || !player.roomId) {
             return;
         }
 
+        const session = getSession(player.sessionId);
         const room = rooms.get(player.roomId);
-        if (!room) {
+        if (!session || !room) {
             return;
         }
 
         if (!room.currentGame) {
-            socket.to(player.roomId).emit('player-input', {
-                playerId: socket.id,
+            socket.to(room.id).emit('player-input', {
+                playerId: session.id,
                 ...data
             });
+            socket.emit('input-ack', { sequence: null });
             return;
         }
 
         room.currentGame.inputSequence += 1;
-        socket.to(player.roomId).emit('player-input', {
-            playerId: socket.id,
-            sequence: room.currentGame.inputSequence,
+        const sequence = room.currentGame.inputSequence;
+        room.recordPlayerInput(session.id, sequence);
+
+        socket.to(room.id).emit('player-input', {
+            playerId: session.id,
+            sequence,
             ...data
         });
+
+        socket.emit('input-ack', { sequence });
     });
 
-    // Disconnect
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
-        
-        const player = players.get(socket.id);
-        if (player && player.roomId) {
-            const room = rooms.get(player.roomId);
-            if (room) {
-                const removal = room.removePlayer(socket.id);
 
-                if (removal.removed && room.players.length === 0) {
-                    rooms.delete(player.roomId);
-                    io.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
-                    console.log(`Room ${room.name} deleted (empty)`);
-                } else if (removal.removed) {
-                    io.to(player.roomId).emit('room-update', room.getFullInfo());
-                    if (removal.hostChanged) {
-                        io.to(room.id).emit('host-changed', { hostId: room.hostId });
+        const player = players.get(socket.id);
+        const session = player ? getSession(player.sessionId) : null;
+
+        if (session && session.roomId) {
+            const room = rooms.get(session.roomId);
+            if (room) {
+                const { hostChanged } = room.markPlayerDisconnected(session.id);
+
+                if (room.players.length === 0) {
+                    rooms.delete(room.id);
+                    broadcastRoomsList();
+                } else {
+                    const info = room.getFullInfo();
+                    io.to(room.id).emit('room-update', info);
+                    if (hostChanged) {
+                        io.to(room.id).emit('host-changed', {
+                            hostId: info.hostId,
+                            hostSessionId: info.hostSessionId
+                        });
                     }
+                    broadcastRoomsList();
                 }
             }
+
+            scheduleSessionCleanup(session.id);
         }
-        
+
+        if (session) {
+            session.connected = false;
+            session.socketId = null;
+        }
+
         players.delete(socket.id);
     });
 });

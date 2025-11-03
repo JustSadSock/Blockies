@@ -451,26 +451,27 @@ header h1 span {
     background: linear-gradient(165deg, rgba(12, 16, 28, 0.92), rgba(22, 30, 48, 0.88));
     min-height: 0;
     overflow: hidden;
-    padding: clamp(56px, 8vh, 80px) clamp(12px, 3vw, 28px) clamp(12px, 4vh, 24px);
+    padding: clamp(28px, 5vh, 44px) clamp(12px, 3vw, 24px) clamp(12px, 4vh, 24px);
     position: relative;
 }
 
 #game-screen.compact {
-    padding-top: clamp(64px, 11vh, 88px);
+    padding-top: clamp(36px, 6vh, 52px);
 }
+
 
 
 .hud-layer {
     position: absolute;
-    top: clamp(6px, 1.5vh, 14px);
+    top: clamp(4px, 1vh, 10px);
     left: 0;
     width: 100%;
-    padding: 0 clamp(12px, 4vw, 32px);
+    padding: 0 clamp(10px, 3vw, 24px);
     display: flex;
     justify-content: center;
     align-items: flex-start;
     pointer-events: none;
-    gap: clamp(6px, 1.6vw, 16px);
+    gap: clamp(4px, 1.4vw, 14px);
     z-index: 10;
 }
 
@@ -478,7 +479,7 @@ header h1 span {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: clamp(6px, 1.5vw, 14px);
+    gap: clamp(4px, 1.2vw, 12px);
     padding: 0;
     border-radius: 999px;
     background: transparent;
@@ -501,13 +502,14 @@ header h1 span {
     display: inline-flex;
     flex-direction: row;
     align-items: center;
-    gap: clamp(6px, 1.6vw, 14px);
-    padding: clamp(4px, 1.2vh, 9px) clamp(14px, 4vw, 24px);
-    border-radius: 999px;
-    background: rgba(8, 14, 27, 0.82);
-    border: 1px solid rgba(0, 217, 255, 0.28);
-    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
-    backdrop-filter: blur(4px);
+    gap: clamp(4px, 1vw, 10px);
+    padding: clamp(2px, 0.6vh, 5px) clamp(10px, 2.2vw, 16px);
+    border-radius: 14px;
+    background: rgba(6, 12, 24, 0.55);
+    border: 1px solid rgba(112, 240, 255, 0.24);
+    box-shadow: inset 0 0 0 1px rgba(0, 40, 70, 0.35);
+    backdrop-filter: blur(2px);
+    max-width: clamp(150px, 24vw, 220px);
 }
 
 .team-score-card::before,
@@ -521,33 +523,33 @@ header h1 span {
 
 .score-card__label {
     text-transform: uppercase;
-    letter-spacing: 0.16em;
-    font-size: clamp(0.58rem, 1.5vw, 0.72rem);
+    letter-spacing: 0.1em;
+    font-size: clamp(0.5rem, 1.1vw, 0.64rem);
     font-weight: 600;
-    color: rgba(185, 230, 255, 0.82);
-    text-shadow: 0 0 6px rgba(0, 217, 255, 0.32);
+    color: rgba(190, 235, 255, 0.75);
+    text-shadow: none;
     text-align: left;
 }
 
 .score-card__value {
-    font-size: clamp(1.15rem, 3.8vw, 1.85rem);
+    font-size: clamp(0.88rem, 2.6vw, 1.32rem);
     font-weight: 700;
-    color: #8cfffb;
+    color: #8cf7ff;
     text-shadow:
-        0 0 12px rgba(140, 255, 251, 0.45),
-        0 0 22px rgba(0, 217, 255, 0.28);
+        0 0 8px rgba(140, 255, 251, 0.25),
+        0 0 14px rgba(0, 217, 255, 0.18);
     white-space: nowrap;
     text-align: left;
 }
 
 .score-card__meta {
     display: flex;
-    gap: clamp(4px, 1.5vw, 10px);
+    gap: clamp(3px, 0.8vw, 6px);
     align-items: center;
-    font-size: clamp(0.58rem, 1.8vw, 0.78rem);
+    font-size: clamp(0.48rem, 1.2vw, 0.68rem);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(190, 230, 255, 0.78);
+    letter-spacing: 0.06em;
+    color: rgba(192, 232, 255, 0.65);
     justify-content: flex-start;
 }
 
@@ -1209,11 +1211,11 @@ canvas {
 
     #game-screen.active {
         gap: 6px;
-        padding: 70px 10px 12px;
+        padding: 60px 10px 12px;
     }
 
     .team-score-card {
-        padding: 6px 10px;
+        padding: 4px 10px;
     }
 
     .combo-indicator {
@@ -1227,7 +1229,7 @@ canvas {
     }
 
     .score-card__value {
-        font-size: clamp(1.2rem, 3vw, 1.6rem);
+        font-size: clamp(1.05rem, 2.6vw, 1.4rem);
     }
 
     .combo-indicator span:first-child {
@@ -1288,18 +1290,18 @@ canvas {
     }
 
     .team-stats {
-        padding: 8px 12px;
+        padding: 6px 10px;
         gap: 8px;
-        min-width: clamp(170px, 70vw, 220px);
+        min-width: clamp(150px, 64vw, 200px);
     }
 
     .team-score-card {
-        min-width: clamp(160px, 68vw, 210px);
-        padding: 8px 12px;
+        min-width: clamp(140px, 60vw, 190px);
+        padding: 6px 10px;
     }
 
     .score-card__value {
-        font-size: clamp(1.25rem, 5vw, 1.7rem);
+        font-size: clamp(1.05rem, 4.4vw, 1.4rem);
     }
 
     .combo-indicator {
@@ -1894,6 +1896,7 @@ canvas {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    border: 1px solid transparent;
 }
 
 .room-player-status.ready {
@@ -1906,6 +1909,20 @@ canvas {
     background: rgba(255, 219, 88, 0.18);
     color: var(--warning);
     border: 1px solid rgba(255, 219, 88, 0.35);
+}
+
+.room-player-status.offline {
+    background: rgba(255, 87, 104, 0.12);
+    color: rgba(255, 135, 148, 0.95);
+    border: 1px solid rgba(255, 87, 104, 0.28);
+}
+
+.room-player-item.is-offline {
+    opacity: 0.7;
+}
+
+.room-player-item.is-offline .room-player-name {
+    opacity: 0.85;
 }
 
 .room-player-kick {
@@ -2089,6 +2106,54 @@ canvas {
     color: var(--text-muted);
     font-weight: 700;
     margin-top: 16px;
+}
+
+.reconnect-banner {
+    position: fixed;
+    top: clamp(8px, 2vh, 18px);
+    left: 50%;
+    transform: translate(-50%, -140%);
+    padding: 8px 18px;
+    border-radius: 999px;
+    background: rgba(6, 10, 22, 0.92);
+    border: 1px solid rgba(0, 217, 255, 0.32);
+    color: #d2f8ff;
+    font-size: clamp(0.62rem, 1.6vw, 0.85rem);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    z-index: 1600;
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.28s ease, opacity 0.28s ease;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.reconnect-banner.visible {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
+.reconnect-banner.is-warning {
+    border-color: rgba(255, 198, 88, 0.42);
+    color: #ffeaca;
+    background: rgba(28, 22, 12, 0.92);
+}
+
+.reconnect-banner.is-error {
+    border-color: rgba(255, 107, 157, 0.48);
+    color: #ffd6e5;
+    background: rgba(32, 12, 22, 0.94);
+}
+
+.reconnect-banner.is-success {
+    border-color: rgba(110, 255, 198, 0.4);
+    color: #c9ffef;
+    background: rgba(14, 32, 26, 0.92);
+}
+
+.reconnect-banner__text {
+    display: block;
+    white-space: nowrap;
 }
 
 .btn-secondary.back-btn {

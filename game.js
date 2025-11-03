@@ -74,7 +74,13 @@ const TRANSLATIONS = {
         connectionFailed: "Connection failed",
         serverUnavailable: "Server is currently unavailable. Please try again later.",
         socketIoNotAvailable: "Unable to connect to multiplayer server.",
-        
+        connectionLost: "Connection lost",
+        attemptingReconnect: "Trying to reconnect...",
+        reconnectFailed: "Unable to reconnect",
+        reconnectFailedMsg: "We couldn't return to the room in time. Head back to the lobby or try again.",
+        connectionRestored: "Connection restored",
+        resumingPlay: "Resuming session...",
+
         // Touch controls
         touchControlsReady: "Touch controls ready",
         startGameForTouch: "Start a game to use touch controls",
@@ -219,7 +225,13 @@ const TRANSLATIONS = {
         connectionFailed: "Ошибка подключения",
         serverUnavailable: "Сервер временно недоступен. Попробуйте позже.",
         socketIoNotAvailable: "Не удалось подключиться к серверу мультиплеера.",
-        
+        connectionLost: "Соединение потеряно",
+        attemptingReconnect: "Пытаемся переподключиться...",
+        reconnectFailed: "Не удалось переподключиться",
+        reconnectFailedMsg: "Не успели вернуться в комнату. Вернитесь в лобби или попробуйте ещё раз.",
+        connectionRestored: "Связь восстановлена",
+        resumingPlay: "Возобновляем игру...",
+
         // Touch controls
         touchControlsReady: "Сенсорное управление готово",
         startGameForTouch: "Начните игру для использования сенсорного управления",
@@ -593,6 +605,7 @@ let gameState = {
     lastAuthoritativeSequence: 0,
     isOnlineMode: false,
     isOnlineHost: false,
+    lastInputSequenceByPlayer: {},
     inputStates: new Map(),
     pieceGenerator: null,
     pieceQueue: [],
@@ -742,6 +755,7 @@ class Player {
         this.currentPiece = null;
         this.nextPiece = null;
         this.position = { x: 0, y: 0 };
+        this.renderPosition = { x: 0, y: 0 };
         this.gameOver = false;
         this.dropCounter = 0;
         this.dropInterval = 1000;
@@ -752,6 +766,8 @@ class Player {
     init() {
         this.nextPiece = takeNextPieceMatrix();
         this.spawnPiece();
+        this.renderPosition.x = this.position.x;
+        this.renderPosition.y = this.position.y;
     }
 
     spawnPiece() {
@@ -793,6 +809,8 @@ class Player {
         }
 
         this.position = spawnPosition || { x: preferredX, y: 0 };
+        this.renderPosition.x = this.position.x;
+        this.renderPosition.y = this.position.y;
 
         if (!spawnPosition && this.checkCollision().collides) {
             this.gameOver = true;
@@ -850,9 +868,13 @@ class Player {
             this.position.x -= dir;
         } else {
             soundManager.move();
+            this.renderPosition.x = this.position.x;
             markStateDirty();
             // Send online update if in online game
             if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+                if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                    window.uiManager.registerLocalOnlineInput('move', { direction: dir });
+                }
                 networkManager.sendPlayerInput({ action: 'move', direction: dir });
             }
         }
@@ -870,18 +892,21 @@ class Player {
             markStateDirty();
             // Send online update if in online game
             if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+                if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                    window.uiManager.registerLocalOnlineInput('rotate');
+                }
                 networkManager.sendPlayerInput({ action: 'rotate' });
             }
         }
     }
 
     drop(options = {}) {
-        const { propagate = true } = options;
+        const { propagate = true, predicted = false } = options;
         this.position.y++;
         const collision = this.checkCollision();
         if (collision.collides) {
             this.position.y--;
-            if (collision.withLocked) {
+            if (collision.withLocked && !predicted) {
                 this.merge();
                 soundManager.drop();
                 this.clearLines();
@@ -890,14 +915,18 @@ class Player {
         }
         markStateDirty();
         this.dropCounter = 0;
+        this.renderPosition.y = this.position.y;
         // Send online update if in online game
         if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                window.uiManager.registerLocalOnlineInput('drop');
+            }
             networkManager.sendPlayerInput({ action: 'drop' });
         }
     }
 
     hardDrop(options = {}) {
-        const { propagate = true } = options;
+        const { propagate = true, predicted = false } = options;
         let maxDrops = BOARD_HEIGHT; // Safety limit
         let landedOnLocked = false;
 
@@ -918,16 +947,20 @@ class Player {
             break;
         }
 
-        if (landedOnLocked) {
+        if (landedOnLocked && !predicted) {
             this.merge();
             soundManager.drop();
             this.clearLines();
             this.spawnPiece();
         }
         this.dropCounter = 0;
+        this.renderPosition.y = this.position.y;
         markStateDirty();
         // Send online update if in online game
         if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                window.uiManager.registerLocalOnlineInput('hardDrop');
+            }
             networkManager.sendPlayerInput({ action: 'hardDrop' });
         }
     }
@@ -1084,6 +1117,10 @@ class UIManager {
         this.lastComboChain = 0;
         this.roomDialogOverlay = null;
         this.roomDialogKeyHandler = null;
+        this.reconnectBanner = null;
+        this.pendingReconnectHide = null;
+        this.awaitingReconnect = false;
+        this.resumeOnReconnect = false;
 
         // Set combo help tooltip
         if (this.comboIndicator) {
@@ -1094,6 +1131,9 @@ class UIManager {
         this.networkPlayers = {}; // Map of network player IDs to local indices
         this.localPlayerIndex = -1; // Local player index in online mode
         this.isOnlineHost = false;
+        this.localPlayerSessionId = null;
+        this.pendingLocalInputs = [];
+        this.lastAckedSequence = 0;
         this.stateBroadcastInterval = 40; // ms between authoritative state pushes
         this.stateBroadcastSequence = 0;
         this.lastStateSentAt = 0;
@@ -1158,6 +1198,98 @@ class UIManager {
             }
             if (this.touchStatus) {
                 this.touchStatus.textContent = this.shouldShowTouchControls() ? t('startGameForTouch') : '';
+            }
+        }
+    }
+
+    registerLocalOnlineInput(action, data = {}) {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (this.localPlayerIndex === -1) {
+            return;
+        }
+
+        if (!this.localPlayerSessionId || this.localPlayerSessionId !== networkManager.sessionId) {
+            return;
+        }
+
+        const entry = {
+            action,
+            data: { ...data },
+            sequence: null,
+            timestamp: performance.now ? performance.now() : Date.now()
+        };
+        this.pendingLocalInputs.push(entry);
+
+        if (this.pendingLocalInputs.length > 40) {
+            this.pendingLocalInputs.shift();
+        }
+    }
+
+    handleInputAck(payload = {}) {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (!payload || typeof payload.sequence !== 'number') {
+            return;
+        }
+
+        const pending = this.pendingLocalInputs.find(entry => entry.sequence === null);
+        if (pending) {
+            pending.sequence = payload.sequence;
+        }
+    }
+
+    confirmAuthoritativeAck(sequence) {
+        if (typeof sequence !== 'number') {
+            return;
+        }
+
+        this.lastAckedSequence = Math.max(this.lastAckedSequence || 0, sequence);
+        this.pendingLocalInputs = this.pendingLocalInputs.filter(entry => {
+            if (typeof entry.sequence !== 'number') {
+                return true;
+            }
+            return entry.sequence > this.lastAckedSequence;
+        });
+        if (this.localPlayerSessionId) {
+            gameState.lastInputSequenceByPlayer[this.localPlayerSessionId] = this.lastAckedSequence;
+        }
+    }
+
+    reapplyPendingInputs() {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (this.localPlayerIndex === -1) {
+            return;
+        }
+
+        const player = gameState.players[this.localPlayerIndex];
+        if (!player || player.gameOver) {
+            return;
+        }
+
+        for (const entry of this.pendingLocalInputs) {
+            switch (entry.action) {
+                case 'move':
+                    if (typeof entry.data.direction === 'number') {
+                        player.move(entry.data.direction, { propagate: false });
+                    }
+                    break;
+                case 'rotate':
+                    player.rotate({ propagate: false });
+                    break;
+                case 'drop':
+                    player.drop({ propagate: false });
+                    break;
+                case 'hardDrop':
+                    player.hardDrop({ propagate: false });
+                    break;
             }
         }
     }
@@ -1513,6 +1645,12 @@ class UIManager {
             }
         }
 
+        if (screenName !== 'gameScreen') {
+            this.awaitingReconnect = false;
+            this.resumeOnReconnect = false;
+            this.setReconnectionState('hidden');
+        }
+
         this.updateTouchControlsVisibility(true);
     }
 
@@ -1541,6 +1679,11 @@ class UIManager {
         gameState.lastAuthoritativeSequence = 0;
         gameState.isOnlineMode = !!this.isOnlineMode;
         gameState.isOnlineHost = !!this.isOnlineHost;
+        gameState.lastInputSequenceByPlayer = {};
+        if (this.pendingLocalInputs) {
+            this.pendingLocalInputs = [];
+        }
+        this.lastAckedSequence = 0;
 
         const seedUsed = initializePieceSystem(options.pieceSeed, options.pieceSequence);
 
@@ -1716,6 +1859,7 @@ class UIManager {
                 });
             }
 
+            this.interpolatePlayerRenderPositions(deltaTime);
             this.drawBoard();
             this.updateTeamStatsIfNeeded();
 
@@ -1729,6 +1873,50 @@ class UIManager {
         }
 
         requestAnimationFrame((time) => this.gameLoop(time));
+    }
+
+    interpolatePlayerRenderPositions(deltaTime) {
+        if (!Number.isFinite(deltaTime)) {
+            return;
+        }
+
+        const smoothingBase = this.isOnlineMode ? 90 : 45;
+        const smoothingVertical = this.isOnlineMode ? 120 : 60;
+        const alphaX = Math.min(1, deltaTime / smoothingBase);
+        const alphaY = Math.min(1, deltaTime / smoothingVertical);
+
+        gameState.players.forEach(player => {
+            if (!player) return;
+
+            if (!player.renderPosition) {
+                player.renderPosition = { x: player.position.x, y: player.position.y };
+            }
+
+            if (!player.currentPiece || player.gameOver) {
+                player.renderPosition.x = player.position.x;
+                player.renderPosition.y = player.position.y;
+                return;
+            }
+
+            const targetX = player.position.x;
+            const targetY = player.position.y;
+
+            const diffX = targetX - player.renderPosition.x;
+            if (Math.abs(diffX) < 0.01) {
+                player.renderPosition.x = targetX;
+            } else {
+                player.renderPosition.x += diffX * alphaX;
+            }
+
+            const diffY = targetY - player.renderPosition.y;
+            if (Math.abs(diffY) > 4) {
+                player.renderPosition.y = targetY;
+            } else if (Math.abs(diffY) < 0.01) {
+                player.renderPosition.y = targetY;
+            } else {
+                player.renderPosition.y += diffY * alphaY;
+            }
+        });
     }
 
     drawBoard() {
@@ -1776,16 +1964,19 @@ class UIManager {
         gameState.players.forEach(player => {
             if (!player.currentPiece || player.gameOver) return;
 
+            const baseX = (player.renderPosition ? player.renderPosition.x : player.position.x);
+            const baseY = (player.renderPosition ? player.renderPosition.y : player.position.y);
+
             for (let y = 0; y < player.currentPiece.length; y++) {
                 for (let x = 0; x < player.currentPiece[y].length; x++) {
                     if (player.currentPiece[y][x]) {
-                        const drawX = (player.position.x + x) * BLOCK_SIZE;
-                        const drawY = (player.position.y + y) * BLOCK_SIZE;
-                        
+                        const drawX = (baseX + x) * BLOCK_SIZE;
+                        const drawY = (baseY + y) * BLOCK_SIZE;
+
                         // Glow effect
                         ctx.shadowColor = player.color;
                         ctx.shadowBlur = 8;
-                        
+
                         // Main block with gradient
                         const gradient = ctx.createLinearGradient(
                             drawX, drawY,
@@ -2375,17 +2566,34 @@ class UIManager {
         }
     }
 
+    setPauseState(shouldPause, options = {}) {
+        if (gameState.isGameOver) return;
+
+        const target = !!shouldPause;
+        const silent = options && options.silent;
+
+        if (gameState.isPaused === target) {
+            return;
+        }
+
+        gameState.isPaused = target;
+
+        if (target) {
+            if (!silent) {
+                this.showModal('pause');
+            }
+        } else {
+            if (!silent) {
+                this.hideModal('pause');
+            }
+            gameState.lastTime = performance.now ? performance.now() : Date.now();
+        }
+    }
+
     togglePause() {
         if (gameState.isGameOver) return;
 
-        gameState.isPaused = !gameState.isPaused;
-        
-        if (gameState.isPaused) {
-            this.showModal('pause');
-        } else {
-            this.hideModal('pause');
-            gameState.lastTime = performance.now();
-        }
+        this.setPauseState(!gameState.isPaused);
     }
 
     restart() {
@@ -2405,12 +2613,16 @@ class UIManager {
         gameState.pieceGenerator = null;
         gameState.pieceQueue = [];
         gameState.pieceSeed = 0;
+        gameState.lastInputSequenceByPlayer = {};
 
         // Reset online mode flags
         this.isOnlineMode = false;
         this.isOnlineHost = false;
         this.networkPlayers = {};
         this.localPlayerIndex = -1;
+        this.pendingLocalInputs = [];
+        this.lastAckedSequence = 0;
+        this.localPlayerSessionId = networkManager.sessionId || null;
         gameState.isOnlineMode = false;
         gameState.stateDirty = false;
         gameState.lastAuthoritativeSequence = 0;
@@ -2606,7 +2818,8 @@ class UIManager {
         // Setup network callbacks
         networkManager.on('connect', () => {
             this.updateConnectionStatus('connected');
-            
+            this.setReconnectionState('hidden');
+
             // Send nickname if available
             const nicknameInput = document.getElementById('nickname-input');
             if (nicknameInput && nicknameInput.value.trim()) {
@@ -2617,6 +2830,34 @@ class UIManager {
         networkManager.on('disconnect', () => {
             this.updateConnectionStatus('disconnected');
             this.showRoomsList([]);
+
+            const expectsReconnect = !!(networkManager.resumeIntent);
+            const inGameScreen = this.screens.gameScreen.classList.contains('active') && gameState.players.length;
+
+            if (expectsReconnect && inGameScreen) {
+                this.resumeOnReconnect = !gameState.isPaused;
+                if (!gameState.isPaused) {
+                    this.setPauseState(true, { silent: true });
+                }
+                this.awaitingReconnect = true;
+            } else {
+                this.awaitingReconnect = false;
+                this.resumeOnReconnect = false;
+            }
+
+            if (!expectsReconnect) {
+                this.setReconnectionState('hidden');
+            }
+        });
+
+        networkManager.on('sessionConfirmed', (data) => {
+            if (data && data.name) {
+                const nicknameInput = document.getElementById('nickname-input');
+                if (nicknameInput && !nicknameInput.value.trim()) {
+                    nicknameInput.value = data.name;
+                }
+            }
+            this.localPlayerSessionId = networkManager.sessionId || this.localPlayerSessionId;
         });
 
         networkManager.on('roomsList', (rooms) => {
@@ -2651,6 +2892,10 @@ class UIManager {
             this.handleHostChanged(payload);
         });
 
+        networkManager.on('inputAck', (payload) => {
+            this.handleInputAck(payload);
+        });
+
         networkManager.on('error', (message) => {
             // Provide user-friendly error messages
             let userMessage = message;
@@ -2669,6 +2914,29 @@ class UIManager {
         networkManager.on('kicked', () => {
             this.showStyledMessage(t('youWereKicked'), t('youWereKickedMsg'), 'warning');
             this.hideRoomView();
+        });
+
+        networkManager.on('reconnecting', (info = {}) => {
+            const attempt = typeof info.attempt === 'number' ? info.attempt : 1;
+            const maxAttempts = typeof info.maxAttempts === 'number'
+                ? info.maxAttempts
+                : (networkManager.getMaxReconnectAttempts() || null);
+            this.setReconnectionState('retry', {
+                attempt,
+                maxAttempts: maxAttempts || '∞'
+            });
+        });
+
+        networkManager.on('reconnected', () => {
+            if (!this.awaitingReconnect) {
+                this.setReconnectionState('restored');
+            }
+        });
+
+        networkManager.on('reconnectFailed', () => {
+            this.awaitingReconnect = false;
+            this.resumeOnReconnect = false;
+            this.setReconnectionState('failed');
         });
 
         // Connect to server
@@ -3083,8 +3351,9 @@ class UIManager {
         const statusEl = document.getElementById('room-status');
         const readyBtn = document.getElementById('ready-btn');
         const socketId = networkManager.socket ? networkManager.socket.id : null;
+        const sessionId = networkManager.sessionId || null;
         const privacyDetailsEl = document.getElementById('room-privacy-details');
-        const isHost = socketId && room.hostId === socketId;
+        const isHost = (sessionId && room.hostSessionId === sessionId) || (socketId && room.hostId === socketId);
 
         if (roomNameEl) {
             roomNameEl.textContent = room.name;
@@ -3117,7 +3386,7 @@ class UIManager {
             playersListEl.innerHTML = '';
             room.players.forEach(player => {
                 const playerDiv = document.createElement('div');
-                playerDiv.className = 'room-player-item';
+                playerDiv.className = 'room-player-item' + (player.connected ? '' : ' is-offline');
 
                 const mainSection = document.createElement('div');
                 mainSection.className = 'room-player-main';
@@ -3135,7 +3404,7 @@ class UIManager {
                 nameEl.textContent = player.name;
                 infoSection.appendChild(nameEl);
 
-                if (player.id === room.hostId) {
+                if (player.sessionId === room.hostSessionId) {
                     const roleEl = document.createElement('div');
                     roleEl.className = 'room-player-role';
                     roleEl.textContent = t('hostLabel');
@@ -3149,18 +3418,23 @@ class UIManager {
                 controlsSection.className = 'room-player-controls';
 
                 const statusBadge = document.createElement('span');
-                statusBadge.className = 'room-player-status ' + (player.ready ? 'ready' : 'not-ready');
-                statusBadge.textContent = player.ready ? t('ready') : t('notReady');
+                if (player.connected) {
+                    statusBadge.className = 'room-player-status ' + (player.ready ? 'ready' : 'not-ready');
+                    statusBadge.textContent = player.ready ? t('ready') : t('notReady');
+                } else {
+                    statusBadge.className = 'room-player-status offline';
+                    statusBadge.textContent = t('disconnectedFromServer');
+                }
                 controlsSection.appendChild(statusBadge);
 
-                if (isHost && player.id !== socketId) {
+                if (isHost && (player.sessionId !== sessionId)) {
                     const kickBtn = document.createElement('button');
                     kickBtn.type = 'button';
                     kickBtn.className = 'room-player-kick';
                     kickBtn.textContent = t('kickPlayer');
                     kickBtn.setAttribute('aria-label', `${t('kickPlayer')} ${player.name}`);
                     kickBtn.addEventListener('click', () => {
-                        networkManager.kickPlayer(player.id);
+                        networkManager.kickPlayer(player.sessionId || player.id);
                     });
                     controlsSection.appendChild(kickBtn);
                 }
@@ -3174,7 +3448,9 @@ class UIManager {
         if (colorOptionsEl) {
             colorOptionsEl.innerHTML = '';
             const COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
-            const myPlayer = socketId ? room.players.find(p => p.id === socketId) : null;
+            const myPlayer = (sessionId
+                ? room.players.find(p => p.sessionId === sessionId)
+                : (socketId ? room.players.find(p => p.id === socketId) : null));
 
             COLORS.forEach(color => {
                 const colorButton = document.createElement('button');
@@ -3206,25 +3482,29 @@ class UIManager {
 
         // Update status
         if (statusEl) {
-            const readyCount = room.players.filter(p => p.ready).length;
-            if (readyCount === room.players.length && room.players.length > 0) {
+            const connectedPlayers = room.players.filter(p => p.connected);
+            const readyCount = connectedPlayers.filter(p => p.ready).length;
+            if (connectedPlayers.length > 0 && readyCount === connectedPlayers.length) {
                 statusEl.setAttribute('data-i18n', 'startingGame');
                 statusEl.textContent = t('startingGame');
                 statusEl.style.background = 'rgba(46, 213, 115, 0.15)';
                 statusEl.style.borderColor = 'rgba(46, 213, 115, 0.3)';
             } else {
                 statusEl.removeAttribute('data-i18n');
-                statusEl.innerHTML = `<span class="ready-count">${readyCount}/${room.players.length}</span> <span data-i18n="playersReadyLabel">${t('playersReadyLabel')}</span>`;
+                const totalCount = connectedPlayers.length || room.players.length;
+                statusEl.innerHTML = `<span class="ready-count">${readyCount}/${totalCount}</span> <span data-i18n="playersReadyLabel">${t('playersReadyLabel')}</span>`;
                 statusEl.style.background = 'rgba(255, 219, 88, 0.15)';
                 statusEl.style.borderColor = 'rgba(255, 219, 88, 0.3)';
             }
         }
 
         if (readyBtn) {
-            const myPlayer = socketId ? room.players.find(p => p.id === socketId) : null;
+            const myPlayer = (sessionId
+                ? room.players.find(p => p.sessionId === sessionId)
+                : (socketId ? room.players.find(p => p.id === socketId) : null));
             const isReady = !!myPlayer?.ready;
 
-            readyBtn.disabled = false;
+            readyBtn.disabled = !myPlayer?.connected;
             readyBtn.classList.remove('btn-pending');
             readyBtn.removeAttribute('aria-busy');
             readyBtn.classList.toggle('btn-secondary', isReady);
@@ -3248,14 +3528,24 @@ class UIManager {
         this.stateBroadcastSequence = 0;
         this.lastStateSentAt = performance.now ? performance.now() : Date.now();
         this.lastRemoteStateAt = 0;
+        this.localPlayerSessionId = networkManager.sessionId || null;
+        this.pendingLocalInputs = [];
+        this.lastAckedSequence = 0;
+        gameState.lastInputSequenceByPlayer = {};
 
         // Update game state with player colors from network and map IDs
         data.players.forEach((netPlayer, index) => {
             gameState.settings.colors[index] = netPlayer.color;
-            this.networkPlayers[netPlayer.id] = index;
-            
+            const playerKey = netPlayer.sessionId || netPlayer.id;
+            if (playerKey) {
+                this.networkPlayers[playerKey] = index;
+                gameState.lastInputSequenceByPlayer[playerKey] = 0;
+            }
+
             // Identify which player is the local player
-            if (networkManager.socket && netPlayer.id === networkManager.socket.id) {
+            const isLocalBySession = this.localPlayerSessionId && netPlayer.sessionId === this.localPlayerSessionId;
+            const isLocalBySocket = networkManager.socket && netPlayer.id === networkManager.socket.id;
+            if (isLocalBySession || isLocalBySocket) {
                 this.localPlayerIndex = index;
             }
         });
@@ -3297,6 +3587,9 @@ class UIManager {
             if (playerIndex !== undefined && playerIndex !== this.localPlayerIndex) {
                 const player = gameState.players[playerIndex];
                 if (player && !player.gameOver) {
+                    if (typeof data.sequence === 'number') {
+                        gameState.lastInputSequenceByPlayer[data.playerId] = data.sequence;
+                    }
                     // Apply the action from remote player
                     switch (data.action) {
                         case 'move':
@@ -3319,6 +3612,10 @@ class UIManager {
                     }
                 }
             }
+        });
+
+        networkManager.on('inputAck', (payload) => {
+            this.handleInputAck(payload);
         });
     }
 
@@ -3346,7 +3643,8 @@ class UIManager {
             queue: queueSnapshot,
             players: playersSnapshot,
             sharedStats: { ...gameState.sharedStats },
-            isGameOver: gameState.isGameOver
+            isGameOver: gameState.isGameOver,
+            inputAcks: { ...gameState.lastInputSequenceByPlayer }
         };
     }
 
@@ -3388,6 +3686,17 @@ class UIManager {
         gameState.lastAuthoritativeSequence = data.sequence;
         this.lastRemoteStateAt = performance.now ? performance.now() : Date.now();
 
+        if (data.inputAcks && typeof data.inputAcks === 'object') {
+            gameState.lastInputSequenceByPlayer = {
+                ...gameState.lastInputSequenceByPlayer,
+                ...data.inputAcks
+            };
+
+            if (this.localPlayerSessionId && Object.prototype.hasOwnProperty.call(data.inputAcks, this.localPlayerSessionId)) {
+                this.confirmAuthoritativeAck(data.inputAcks[this.localPlayerSessionId]);
+            }
+        }
+
         if (Array.isArray(data.board) && data.board.length) {
             gameState.board = data.board.map(row => Array.isArray(row) ? [...row] : []);
         }
@@ -3405,6 +3714,15 @@ class UIManager {
                 if (snapshot.position) {
                     player.position.x = typeof snapshot.position.x === 'number' ? snapshot.position.x : player.position.x;
                     player.position.y = typeof snapshot.position.y === 'number' ? snapshot.position.y : player.position.y;
+                    if (!player.renderPosition) {
+                        player.renderPosition = { x: player.position.x, y: player.position.y };
+                    }
+                    if (Math.abs(player.renderPosition.x - player.position.x) > 3) {
+                        player.renderPosition.x = player.position.x;
+                    }
+                    if (Math.abs(player.renderPosition.y - player.position.y) > 4) {
+                        player.renderPosition.y = player.position.y;
+                    }
                 }
 
                 if (Array.isArray(snapshot.currentPiece)) {
@@ -3460,6 +3778,16 @@ class UIManager {
         }
 
         this.drawBoard();
+        this.reapplyPendingInputs();
+
+        if (this.awaitingReconnect) {
+            this.awaitingReconnect = false;
+            if (this.resumeOnReconnect) {
+                this.setPauseState(false, { silent: true });
+            }
+            this.resumeOnReconnect = false;
+            this.setReconnectionState('restored');
+        }
     }
 
     handleHostChanged(payload = {}) {
@@ -3467,13 +3795,16 @@ class UIManager {
             return;
         }
 
-        const newHostId = payload.hostId;
-        if (!newHostId || !networkManager.socket) {
+        const newHostId = payload.hostId || null;
+        const newHostSessionId = payload.hostSessionId || null;
+        if (!networkManager.socket && !newHostSessionId) {
             return;
         }
 
         const wasHost = this.isOnlineHost;
-        this.isOnlineHost = networkManager.socket.id === newHostId;
+        const socketMatch = networkManager.socket && newHostId && networkManager.socket.id === newHostId;
+        const sessionMatch = this.localPlayerSessionId && newHostSessionId === this.localPlayerSessionId;
+        this.isOnlineHost = socketMatch || sessionMatch;
 
         if (this.isOnlineHost) {
             this.stateBroadcastSequence = gameState.stateSequence || 0;
@@ -3482,6 +3813,77 @@ class UIManager {
             gameState.sharedStatsDirty = true;
         } else if (wasHost) {
             networkManager.requestSync();
+        }
+    }
+
+    setReconnectionState(state, context = {}) {
+        if (!this.reconnectBanner) {
+            const banner = document.createElement('div');
+            banner.id = 'reconnect-banner';
+            banner.className = 'reconnect-banner';
+            const text = document.createElement('span');
+            text.className = 'reconnect-banner__text';
+            banner.appendChild(text);
+            document.body.appendChild(banner);
+            this.reconnectBanner = banner;
+        }
+
+        const banner = this.reconnectBanner;
+        const textEl = banner.querySelector('.reconnect-banner__text');
+        if (!textEl) {
+            return;
+        }
+
+        if (this.pendingReconnectHide) {
+            clearTimeout(this.pendingReconnectHide);
+            this.pendingReconnectHide = null;
+        }
+
+        const resetClasses = () => {
+            banner.classList.remove('is-warning', 'is-error', 'is-success');
+        };
+
+        switch (state) {
+            case 'lost':
+            case 'retry': {
+                resetClasses();
+                banner.classList.add('is-warning');
+                const attempt = typeof context.attempt === 'number' && context.attempt > 0
+                    ? context.attempt
+                    : 1;
+                const max = typeof context.maxAttempts === 'number' && context.maxAttempts > 0
+                    ? context.maxAttempts
+                    : '∞';
+                textEl.textContent = `${t('connectionLost')} · ${t('attemptingReconnect')} (${attempt}/${max})`;
+                banner.classList.add('visible');
+                break;
+            }
+            case 'failed': {
+                resetClasses();
+                banner.classList.add('is-error');
+                textEl.textContent = `${t('reconnectFailed')} · ${t('reconnectFailedMsg')}`;
+                banner.classList.add('visible');
+                this.pendingReconnectHide = setTimeout(() => {
+                    banner.classList.remove('visible');
+                    this.pendingReconnectHide = null;
+                }, 5000);
+                break;
+            }
+            case 'restored': {
+                resetClasses();
+                banner.classList.add('is-success');
+                textEl.textContent = `${t('connectionRestored')} · ${t('resumingPlay')}`;
+                banner.classList.add('visible');
+                this.pendingReconnectHide = setTimeout(() => {
+                    banner.classList.remove('visible');
+                    this.pendingReconnectHide = null;
+                }, 1600);
+                break;
+            }
+            case 'hidden':
+            default: {
+                banner.classList.remove('visible');
+            }
         }
     }
 
@@ -3909,7 +4311,7 @@ function init() {
         }
     }
 
-    const ui = new UIManager();
+    window.uiManager = new UIManager();
 }
 
 // Start the game when the page loads

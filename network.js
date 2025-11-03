@@ -5,9 +5,12 @@ class NetworkManager {
         this.connected = false;
         this.currentRoom = null;
         this.serverUrl = 'https://irgri.uk';
+        this.sessionId = null;
+        this.sessionStorageKey = 'blockies-session-id';
         this.callbacks = {
             onConnect: null,
             onDisconnect: null,
+            onSessionConfirmed: null,
             onRoomsList: null,
             onRoomCreated: null,
             onRoomJoined: null,
@@ -18,8 +21,16 @@ class NetworkManager {
             onPlayerInput: null,
             onPlayerKicked: null,
             onHostChanged: null,
+            onInputAck: null,
+            onReconnecting: null,
+            onReconnected: null,
+            onReconnectFailed: null,
             onError: null
         };
+        this.resumeIntent = null;
+        this.pendingRejoin = false;
+        this.maxReconnectAttempts = null;
+        this.manualDisconnect = false;
     }
 
     connect() {
@@ -46,6 +57,11 @@ class NetworkManager {
                 reconnectionAttempts: 5
             });
 
+            this.pendingRejoin = false;
+            this.maxReconnectAttempts = this.socket && this.socket.io && typeof this.socket.io.opts.reconnectionAttempts === 'number'
+                ? this.socket.io.opts.reconnectionAttempts
+                : null;
+
             this.setupEventListeners();
         } catch (error) {
             console.error('Failed to connect:', error);
@@ -61,6 +77,7 @@ class NetworkManager {
         this.socket.on('connect', () => {
             console.log('Connected to server');
             this.connected = true;
+            this.identify();
             if (this.callbacks.onConnect) {
                 this.callbacks.onConnect();
             }
@@ -68,9 +85,79 @@ class NetworkManager {
 
         this.socket.on('disconnect', () => {
             console.log('Disconnected from server');
+            const wasManual = this.manualDisconnect;
+            this.manualDisconnect = false;
+            if (this.currentRoom && !wasManual) {
+                this.rememberRoomIntent(this.currentRoom);
+            }
             this.connected = false;
+            this.pendingRejoin = false;
             if (this.callbacks.onDisconnect) {
                 this.callbacks.onDisconnect();
+            }
+            if (!wasManual && this.callbacks.onReconnecting) {
+                this.callbacks.onReconnecting({
+                    attempt: 1,
+                    maxAttempts: this.maxReconnectAttempts
+                });
+            }
+        });
+
+        if (this.socket.io) {
+            this.socket.io.on('reconnect_attempt', (attempt) => {
+                if (this.manualDisconnect) {
+                    return;
+                }
+                if (this.callbacks.onReconnecting) {
+                    this.callbacks.onReconnecting({
+                        attempt: Math.max(1, attempt || 1),
+                        maxAttempts: this.maxReconnectAttempts
+                    });
+                }
+            });
+
+            this.socket.io.on('reconnect', (attempt) => {
+                if (this.callbacks.onReconnected) {
+                    this.callbacks.onReconnected({ attempt });
+                }
+            });
+
+            this.socket.io.on('reconnect_failed', () => {
+                if (this.callbacks.onReconnectFailed) {
+                    this.callbacks.onReconnectFailed();
+                }
+            });
+        }
+
+        this.socket.on('session-confirmed', (data) => {
+            if (data && typeof data.sessionId === 'string') {
+                this.sessionId = data.sessionId;
+                try {
+                    if (typeof localStorage !== 'undefined') {
+                        localStorage.setItem(this.sessionStorageKey, data.sessionId);
+                    }
+                } catch (storageError) {
+                    console.warn('Unable to persist session ID', storageError);
+                }
+            }
+
+            const restored = data && data.restoredRoom;
+            if (restored) {
+                this.pendingRejoin = false;
+            } else if (this.resumeIntent && this.resumeIntent.roomId && !this.pendingRejoin && !this.manualDisconnect) {
+                const intent = { ...this.resumeIntent };
+                this.pendingRejoin = true;
+                setTimeout(() => {
+                    if (this.socket && this.connected) {
+                        this.joinRoom(intent.roomId, intent.accessCode || null);
+                    } else {
+                        this.pendingRejoin = false;
+                    }
+                }, 200);
+            }
+
+            if (this.callbacks.onSessionConfirmed) {
+                this.callbacks.onSessionConfirmed(data);
             }
         });
 
@@ -84,6 +171,8 @@ class NetworkManager {
         this.socket.on('room-created', (room) => {
             console.log('Room created:', room);
             this.currentRoom = room;
+            this.rememberRoomIntent(room);
+            this.pendingRejoin = false;
             if (this.callbacks.onRoomCreated) {
                 this.callbacks.onRoomCreated(room);
             }
@@ -92,6 +181,8 @@ class NetworkManager {
         this.socket.on('room-joined', (room) => {
             console.log('Room joined:', room);
             this.currentRoom = room;
+            this.rememberRoomIntent(room);
+            this.pendingRejoin = false;
             if (this.callbacks.onRoomJoined) {
                 this.callbacks.onRoomJoined(room);
             }
@@ -100,6 +191,7 @@ class NetworkManager {
         this.socket.on('room-update', (room) => {
             console.log('Room updated:', room);
             this.currentRoom = room;
+            this.rememberRoomIntent(room);
             if (this.callbacks.onRoomUpdate) {
                 this.callbacks.onRoomUpdate(room);
             }
@@ -108,6 +200,8 @@ class NetworkManager {
         this.socket.on('left-room', () => {
             console.log('Left room');
             this.currentRoom = null;
+            this.rememberRoomIntent(null);
+            this.pendingRejoin = false;
             if (this.callbacks.onLeftRoom) {
                 this.callbacks.onLeftRoom();
             }
@@ -115,6 +209,10 @@ class NetworkManager {
 
         this.socket.on('game-start', (data) => {
             console.log('Game starting:', data);
+            if (this.currentRoom) {
+                this.currentRoom.gameStarted = true;
+                this.rememberRoomIntent(this.currentRoom);
+            }
             if (this.callbacks.onGameStart) {
                 this.callbacks.onGameStart(data);
             }
@@ -138,8 +236,15 @@ class NetworkManager {
             }
         });
 
+        this.socket.on('input-ack', (data) => {
+            if (this.callbacks.onInputAck) {
+                this.callbacks.onInputAck(data);
+            }
+        });
+
         this.socket.on('error', (error) => {
             console.error('Server error:', error);
+            this.pendingRejoin = false;
             if (this.callbacks.onError) {
                 this.callbacks.onError(error.message);
             }
@@ -148,18 +253,76 @@ class NetworkManager {
         this.socket.on('kicked', (info) => {
             console.log('Kicked from room:', info);
             this.currentRoom = null;
+            this.rememberRoomIntent(null);
+            this.pendingRejoin = false;
             if (this.callbacks.onPlayerKicked) {
                 this.callbacks.onPlayerKicked(info);
             }
         });
     }
 
+    identify() {
+        if (!this.socket) {
+            return;
+        }
+
+        let storedSessionId = null;
+        try {
+            if (typeof localStorage !== 'undefined') {
+                storedSessionId = localStorage.getItem(this.sessionStorageKey);
+            }
+        } catch (error) {
+            console.warn('Unable to read stored session id', error);
+        }
+
+        const payload = {};
+        if (storedSessionId || this.sessionId) {
+            payload.sessionId = storedSessionId || this.sessionId;
+        }
+
+        try {
+            if (typeof localStorage !== 'undefined') {
+                const nickname = localStorage.getItem('blockies-nickname');
+                if (nickname) {
+                    payload.nickname = nickname;
+                }
+            }
+        } catch (error) {
+            console.warn('Unable to read saved nickname', error);
+        }
+
+        this.socket.emit('identify', payload);
+    }
+
+    rememberRoomIntent(room) {
+        if (!room || !room.id) {
+            if (!this.manualDisconnect) {
+                this.resumeIntent = null;
+            }
+            return;
+        }
+
+        this.resumeIntent = {
+            roomId: room.id,
+            accessCode: room.accessCode || null,
+            isPrivate: !!room.isPrivate,
+            gameStarted: !!room.gameStarted
+        };
+    }
+
+    getMaxReconnectAttempts() {
+        return this.maxReconnectAttempts;
+    }
+
     disconnect() {
         if (this.socket) {
+            this.manualDisconnect = true;
             this.socket.disconnect();
             this.socket = null;
             this.connected = false;
             this.currentRoom = null;
+            this.resumeIntent = null;
+            this.pendingRejoin = false;
         }
     }
 
@@ -256,6 +419,7 @@ class NetworkManager {
         const validEvents = {
             'connect': 'onConnect',
             'disconnect': 'onDisconnect',
+            'sessionConfirmed': 'onSessionConfirmed',
             'roomsList': 'onRoomsList',
             'roomCreated': 'onRoomCreated',
             'roomJoined': 'onRoomJoined',
@@ -266,6 +430,10 @@ class NetworkManager {
             'playerInput': 'onPlayerInput',
             'kicked': 'onPlayerKicked',
             'hostChanged': 'onHostChanged',
+            'inputAck': 'onInputAck',
+            'reconnecting': 'onReconnecting',
+            'reconnected': 'onReconnected',
+            'reconnectFailed': 'onReconnectFailed',
             'error': 'onError'
         };
         
