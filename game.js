@@ -91,6 +91,11 @@ const TRANSLATIONS = {
         enterYourName: "Enter your name...",
         availableRooms: "Available Rooms",
         createNewRoom: "Create New Room",
+        roomNameLabel: "Room name",
+        createRoomPlaceholder: "Name your room...",
+        createRoomAction: "Create",
+        createRoomHelp: "Pick a name and invite friends to join.",
+        roomNameRequired: "Enter a room name first.",
         playersInRoom: "Players in Room",
         yourColor: "Your Color",
         ready: "Ready",
@@ -209,6 +214,11 @@ const TRANSLATIONS = {
         enterYourName: "Введите ваше имя...",
         availableRooms: "Доступные комнаты",
         createNewRoom: "Создать новую комнату",
+        roomNameLabel: "Название комнаты",
+        createRoomPlaceholder: "Введите название комнаты...",
+        createRoomAction: "Создать",
+        createRoomHelp: "Придумайте название и пригласите друзей.",
+        roomNameRequired: "Введите название комнаты.",
         playersInRoom: "Игроки в комнате",
         yourColor: "Ваш цвет",
         ready: "Готов",
@@ -1086,7 +1096,13 @@ class UIManager {
 
         // Online lobby
         document.getElementById('back-from-online-btn').addEventListener('click', () => this.showScreen('mainMenu'));
-        document.getElementById('create-room-btn').addEventListener('click', () => this.createRoom());
+        const createRoomForm = document.getElementById('create-room-form');
+        if (createRoomForm) {
+            createRoomForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                this.createRoom();
+            });
+        }
         const nicknameInput = document.getElementById('nickname-input');
         if (nicknameInput) {
             // Load saved nickname
@@ -1881,8 +1897,13 @@ class UIManager {
         let gapSegments = 0;
 
         if (this.teamStats && this.teamStats.classList.contains('visible')) {
-            usedHeight += this.teamStats.getBoundingClientRect().height;
-            gapSegments += 1;
+            const teamStatsStyles = window.getComputedStyle(this.teamStats);
+            const parentStyles = this.teamStats.parentElement ? window.getComputedStyle(this.teamStats.parentElement) : null;
+            const isOverlay = teamStatsStyles.position === 'absolute' || teamStatsStyles.position === 'fixed' || parentStyles?.position === 'absolute' || parentStyles?.position === 'fixed';
+            if (!isOverlay) {
+                usedHeight += this.teamStats.getBoundingClientRect().height;
+                gapSegments += 1;
+            }
         }
 
         if (this.gameControls) {
@@ -2334,6 +2355,7 @@ class UIManager {
 
     showOnlineLobby() {
         this.showScreen('onlineLobby');
+        this.hideRoomView();
         this.updateConnectionStatus('connecting');
         
         // Setup network callbacks
@@ -2450,10 +2472,27 @@ class UIManager {
     }
 
     createRoom() {
-        const roomName = prompt('Enter room name:', 'My Room');
-        if (roomName) {
-            networkManager.createRoom(roomName);
+        const input = document.getElementById('create-room-name');
+        if (!input) {
+            return;
         }
+
+        const rawName = input.value.trim();
+        if (!rawName) {
+            input.focus();
+            input.classList.add('input-error');
+            setTimeout(() => input.classList.remove('input-error'), 300);
+            this.showStyledMessage(t('roomNameLabel'), t('roomNameRequired'), 'warning');
+            return;
+        }
+
+        if (!networkManager.connected) {
+            this.showStyledMessage(t('networkError'), t('connectionFailed'), 'error');
+            return;
+        }
+
+        networkManager.createRoom(rawName);
+        input.value = '';
     }
 
     joinRoom(roomId) {
