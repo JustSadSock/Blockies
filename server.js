@@ -24,6 +24,46 @@ const players = new Map();
 // Available colors for players
 const AVAILABLE_COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
 
+const PIECE_ORDER = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function () {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function shuffleWithRng(items, rng) {
+    const list = [...items];
+    for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+}
+
+function createPieceDealer(seed) {
+    const normalizedSeed = seed >>> 0;
+    const rng = mulberry32(normalizedSeed);
+    let bag = [];
+    return {
+        seed: normalizedSeed,
+        nextBatch(count = 32) {
+            const pieces = [];
+            for (let i = 0; i < count; i++) {
+                if (!bag.length) {
+                    bag = shuffleWithRng(PIECE_ORDER, rng);
+                }
+                pieces.push(bag.pop());
+            }
+            return pieces;
+        }
+    };
+}
+
 class Room {
     constructor(id, name, hostId) {
         this.id = id;
@@ -64,15 +104,18 @@ class Room {
             const player = this.players[playerIndex];
             this.usedColors.delete(player.color);
             this.players.splice(playerIndex, 1);
-            
+
+            let hostChanged = false;
+
             // If host left, assign new host
             if (this.hostId === playerId && this.players.length > 0) {
                 this.hostId = this.players[0].id;
+                hostChanged = true;
             }
-            
-            return true;
+
+            return { removed: true, hostChanged };
         }
-        return false;
+        return { removed: false, hostChanged: false };
     }
 
     setPlayerColor(playerId, color) {
@@ -104,14 +147,40 @@ class Room {
     }
 
     beginGame(seed) {
+        const normalizedSeed = Number.isFinite(seed)
+            ? (seed >>> 0)
+            : Math.floor(Math.random() * 0xffffffff);
+
         this.players.forEach(player => {
             player.ready = false;
         });
+
+        const dealer = createPieceDealer(normalizedSeed);
+        const initialPieces = dealer.nextBatch(224);
+
         this.gameStarted = true;
         this.currentGame = {
-            seed,
-            startedAt: Date.now()
+            seed: normalizedSeed,
+            startedAt: Date.now(),
+            dealer,
+            initialPieces,
+            stateSequence: 0,
+            inputSequence: 0,
+            lastStatePayload: null,
+            lastBroadcastAt: 0
         };
+
+        return {
+            seed: normalizedSeed,
+            initialPieces
+        };
+    }
+
+    getNextPieces(count = 64) {
+        if (!this.currentGame || !this.currentGame.dealer) {
+            return [];
+        }
+        return this.currentGame.dealer.nextBatch(count);
     }
 
     resetGameState() {
@@ -284,15 +353,22 @@ io.on('connection', (socket) => {
         if (player && player.roomId) {
             const room = rooms.get(player.roomId);
             if (room) {
-                room.removePlayer(socket.id);
+                const removal = room.removePlayer(socket.id);
+                if (!removal.removed) {
+                    return;
+                }
+
                 socket.leave(player.roomId);
-                
+
                 if (room.players.length === 0) {
                     rooms.delete(player.roomId);
                     broadcastRoomsList();
                     console.log(`Room ${room.name} deleted (empty)`);
                 } else {
                     io.to(player.roomId).emit('room-update', room.getFullInfo());
+                    if (removal.hostChanged) {
+                        io.to(room.id).emit('host-changed', { hostId: room.hostId });
+                    }
                     broadcastRoomsList();
                 }
 
@@ -322,8 +398,8 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const wasRemoved = room.removePlayer(targetId);
-        if (!wasRemoved) {
+        const removal = room.removePlayer(targetId);
+        if (!removal.removed) {
             return;
         }
 
@@ -340,6 +416,9 @@ io.on('connection', (socket) => {
             rooms.delete(room.id);
         } else {
             io.to(room.id).emit('room-update', room.getFullInfo());
+            if (removal.hostChanged) {
+                io.to(room.id).emit('host-changed', { hostId: room.hostId });
+            }
         }
 
         broadcastRoomsList();
@@ -375,11 +454,13 @@ io.on('connection', (socket) => {
                     // Check if all players are ready
                     // Allow solo practice (1 player) or multiplayer (2+ players)
                     if (room.allPlayersReady() && room.players.length >= 1) {
-                        const pieceSeed = Math.floor(Math.random() * 0xffffffff);
-                        room.beginGame(pieceSeed);
+                        const randomSeed = Math.floor(Math.random() * 0xffffffff);
+                        const { seed: pieceSeed, initialPieces } = room.beginGame(randomSeed);
                         io.to(player.roomId).emit('game-start', {
                             players: room.players,
-                            pieceSeed
+                            pieceSeed,
+                            pieceSequence: initialPieces,
+                            hostId: room.hostId
                         });
                         io.to(player.roomId).emit('room-update', room.getFullInfo());
                         broadcastRoomsList();
@@ -391,25 +472,82 @@ io.on('connection', (socket) => {
     });
 
     // Game state sync
-    socket.on('game-state', (data) => {
+    socket.on('game-state', (data = {}) => {
         const player = players.get(socket.id);
-        if (player && player.roomId) {
-            socket.to(player.roomId).emit('game-state', {
-                playerId: socket.id,
-                ...data
-            });
+        if (!player || !player.roomId) {
+            return;
         }
+
+        const room = rooms.get(player.roomId);
+        if (!room || !room.currentGame) {
+            return;
+        }
+
+        if (socket.id !== room.hostId) {
+            return;
+        }
+
+        const providedSequence = typeof data.sequence === 'number' ? data.sequence : null;
+        const nextSequence = providedSequence !== null
+            ? providedSequence
+            : (room.currentGame.stateSequence + 1);
+
+        room.currentGame.stateSequence = nextSequence;
+        room.currentGame.lastStatePayload = {
+            ...data,
+            sequence: nextSequence
+        };
+        room.currentGame.lastBroadcastAt = Date.now();
+
+        socket.to(room.id).emit('game-state', {
+            ...room.currentGame.lastStatePayload,
+            serverTime: Date.now()
+        });
+    });
+
+    socket.on('request-sync', () => {
+        const player = players.get(socket.id);
+        if (!player || !player.roomId) {
+            return;
+        }
+
+        const room = rooms.get(player.roomId);
+        if (!room || !room.currentGame || !room.currentGame.lastStatePayload) {
+            return;
+        }
+
+        socket.emit('game-state', {
+            ...room.currentGame.lastStatePayload,
+            serverTime: Date.now()
+        });
     });
 
     // Player input
     socket.on('player-input', (data) => {
         const player = players.get(socket.id);
-        if (player && player.roomId) {
+        if (!player || !player.roomId) {
+            return;
+        }
+
+        const room = rooms.get(player.roomId);
+        if (!room) {
+            return;
+        }
+
+        if (!room.currentGame) {
             socket.to(player.roomId).emit('player-input', {
                 playerId: socket.id,
                 ...data
             });
+            return;
         }
+
+        room.currentGame.inputSequence += 1;
+        socket.to(player.roomId).emit('player-input', {
+            playerId: socket.id,
+            sequence: room.currentGame.inputSequence,
+            ...data
+        });
     });
 
     // Disconnect
@@ -420,14 +558,17 @@ io.on('connection', (socket) => {
         if (player && player.roomId) {
             const room = rooms.get(player.roomId);
             if (room) {
-                room.removePlayer(socket.id);
-                
-                if (room.players.length === 0) {
+                const removal = room.removePlayer(socket.id);
+
+                if (removal.removed && room.players.length === 0) {
                     rooms.delete(player.roomId);
                     io.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
                     console.log(`Room ${room.name} deleted (empty)`);
-                } else {
+                } else if (removal.removed) {
                     io.to(player.roomId).emit('room-update', room.getFullInfo());
+                    if (removal.hostChanged) {
+                        io.to(room.id).emit('host-changed', { hostId: room.hostId });
+                    }
                 }
             }
         }

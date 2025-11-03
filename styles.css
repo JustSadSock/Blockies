@@ -459,25 +459,26 @@ header h1 span {
     padding-top: clamp(64px, 11vh, 88px);
 }
 
+
 .hud-layer {
     position: absolute;
-    top: clamp(8px, 2.5vh, 18px);
+    top: clamp(6px, 1.5vh, 14px);
     left: 0;
     width: 100%;
-    padding: 0 clamp(16px, 5vw, 48px);
+    padding: 0 clamp(12px, 4vw, 32px);
     display: flex;
     justify-content: center;
     align-items: flex-start;
     pointer-events: none;
-    gap: clamp(8px, 2vw, 18px);
+    gap: clamp(6px, 1.6vw, 16px);
     z-index: 10;
 }
 
 .team-stats {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 6px;
+    gap: clamp(6px, 1.5vw, 14px);
     padding: 0;
     border-radius: 999px;
     background: transparent;
@@ -485,8 +486,8 @@ header h1 span {
     box-shadow: none;
     min-width: auto;
     opacity: 0;
-    transform: translateY(-12px) scale(0.96);
-    transition: transform 0.3s var(--transition-medium), opacity 0.3s var(--transition-medium);
+    transform: translateY(-10px) scale(0.95);
+    transition: transform 0.25s var(--transition-medium), opacity 0.25s var(--transition-medium);
     pointer-events: none;
 }
 
@@ -498,38 +499,20 @@ header h1 span {
 .team-score-card {
     position: relative;
     display: inline-flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: clamp(6px, 2vh, 12px);
-    padding: clamp(8px, 2vh, 14px) clamp(18px, 5vw, 32px);
+    gap: clamp(6px, 1.6vw, 14px);
+    padding: clamp(4px, 1.2vh, 9px) clamp(14px, 4vw, 24px);
     border-radius: 999px;
-    background: linear-gradient(120deg, rgba(7, 14, 28, 0.88), rgba(12, 24, 46, 0.78));
-    border: 1px solid rgba(140, 208, 255, 0.35);
-    box-shadow:
-        0 10px 28px rgba(0, 0, 0, 0.38),
-        0 0 22px rgba(0, 217, 255, 0.25);
-    backdrop-filter: blur(8px);
-    overflow: hidden;
+    background: rgba(8, 14, 27, 0.82);
+    border: 1px solid rgba(0, 217, 255, 0.28);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(4px);
 }
 
-.team-score-card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: radial-gradient(circle at 20% 20%, rgba(0, 217, 255, 0.28), transparent 65%);
-    opacity: 0.9;
-    pointer-events: none;
-}
-
+.team-score-card::before,
 .team-score-card::after {
-    content: '';
-    position: absolute;
-    inset: 2px;
-    border-radius: inherit;
-    background: linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 55%);
-    opacity: 0.35;
-    pointer-events: none;
+    display: none;
 }
 
 .team-score-card.score-card--pulse {
@@ -538,39 +521,39 @@ header h1 span {
 
 .score-card__label {
     text-transform: uppercase;
-    letter-spacing: 0.22em;
-    font-size: clamp(0.62rem, 2vw, 0.78rem);
+    letter-spacing: 0.16em;
+    font-size: clamp(0.58rem, 1.5vw, 0.72rem);
     font-weight: 600;
-    color: rgba(180, 225, 255, 0.82);
-    text-shadow: 0 0 8px rgba(0, 217, 255, 0.4);
-    text-align: center;
+    color: rgba(185, 230, 255, 0.82);
+    text-shadow: 0 0 6px rgba(0, 217, 255, 0.32);
+    text-align: left;
 }
 
 .score-card__value {
-    font-size: clamp(1.45rem, 5vw, 2.3rem);
+    font-size: clamp(1.15rem, 3.8vw, 1.85rem);
     font-weight: 700;
     color: #8cfffb;
     text-shadow:
-        0 0 16px rgba(140, 255, 251, 0.55),
-        0 0 36px rgba(0, 217, 255, 0.35);
+        0 0 12px rgba(140, 255, 251, 0.45),
+        0 0 22px rgba(0, 217, 255, 0.28);
     white-space: nowrap;
-    text-align: center;
+    text-align: left;
 }
 
 .score-card__meta {
     display: flex;
-    gap: clamp(6px, 2vw, 12px);
+    gap: clamp(4px, 1.5vw, 10px);
     align-items: center;
-    font-size: clamp(0.65rem, 2.2vw, 0.85rem);
+    font-size: clamp(0.58rem, 1.8vw, 0.78rem);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     color: rgba(190, 230, 255, 0.78);
-    justify-content: center;
+    justify-content: flex-start;
 }
 
 .score-card__meta-item {
     position: relative;
-    padding-left: 14px;
+    padding-left: 12px;
     white-space: nowrap;
 }
 
@@ -579,29 +562,29 @@ header h1 span {
     position: absolute;
     left: 0;
     top: 50%;
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
-    background: rgba(0, 217, 255, 0.55);
+    background: rgba(0, 217, 255, 0.6);
     transform: translateY(-50%);
-    box-shadow: 0 0 10px rgba(0, 217, 255, 0.55);
+    box-shadow: 0 0 6px rgba(0, 217, 255, 0.45);
 }
 
 .combo-indicator {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 10px 14px;
-    border-radius: 14px;
-    background: rgba(15, 24, 40, 0.9);
-    border: 1px solid rgba(140, 208, 255, 0.35);
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: rgba(12, 20, 34, 0.9);
+    border: 1px solid rgba(0, 217, 255, 0.28);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
     color: rgba(173, 208, 255, 0.95);
-    min-width: 140px;
+    min-width: 120px;
     opacity: 0;
     transform: translateY(6px) scale(0.98);
     transition: all var(--transition-medium);
-    text-shadow: 0 0 6px rgba(58, 153, 255, 0.35);
+    text-shadow: 0 0 5px rgba(58, 153, 255, 0.3);
     cursor: help;
     position: relative;
 }
@@ -1269,7 +1252,7 @@ canvas {
 
     #game-screen.active {
         min-height: unset;
-        padding-top: 104px;
+        padding-top: 72px;
     }
 }
 
@@ -1305,23 +1288,23 @@ canvas {
     }
 
     .team-stats {
-        padding: 10px 14px;
+        padding: 8px 12px;
         gap: 8px;
-        min-width: clamp(210px, 80vw, 260px);
+        min-width: clamp(170px, 70vw, 220px);
     }
 
     .team-score-card {
-        min-width: clamp(190px, 75vw, 240px);
-        padding: 10px 12px;
+        min-width: clamp(160px, 68vw, 210px);
+        padding: 8px 12px;
     }
 
     .score-card__value {
-        font-size: clamp(1.35rem, 6vw, 1.85rem);
+        font-size: clamp(1.25rem, 5vw, 1.7rem);
     }
 
     .combo-indicator {
         width: auto;
-        padding: 8px 12px;
+        padding: 7px 10px;
     }
 
     .combo-indicator span:first-child {

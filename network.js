@@ -17,6 +17,7 @@ class NetworkManager {
             onGameState: null,
             onPlayerInput: null,
             onPlayerKicked: null,
+            onHostChanged: null,
             onError: null
         };
     }
@@ -122,6 +123,12 @@ class NetworkManager {
         this.socket.on('game-state', (data) => {
             if (this.callbacks.onGameState) {
                 this.callbacks.onGameState(data);
+            }
+        });
+
+        this.socket.on('host-changed', (payload) => {
+            if (this.callbacks.onHostChanged) {
+                this.callbacks.onHostChanged(payload);
             }
         });
 
@@ -238,6 +245,13 @@ class NetworkManager {
         this.socket.emit('player-input', input);
     }
 
+    requestSync() {
+        if (!this.socket || !this.connected) {
+            return;
+        }
+        this.socket.emit('request-sync');
+    }
+
     on(event, callback) {
         const validEvents = {
             'connect': 'onConnect',
@@ -251,6 +265,7 @@ class NetworkManager {
             'gameState': 'onGameState',
             'playerInput': 'onPlayerInput',
             'kicked': 'onPlayerKicked',
+            'hostChanged': 'onHostChanged',
             'error': 'onError'
         };
         

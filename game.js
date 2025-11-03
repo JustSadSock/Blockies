@@ -470,17 +470,24 @@ function createPieceGenerator(seed) {
     };
 }
 
-function initializePieceSystem(seed) {
+function initializePieceSystem(seed, initialSequence = null) {
     const normalizedSeed = Number.isFinite(seed) ? (seed >>> 0) : Math.floor(Math.random() * 0xffffffff);
     gameState.pieceSeed = normalizedSeed;
     gameState.pieceGenerator = createPieceGenerator(normalizedSeed);
-    gameState.pieceQueue = [];
+    if (Array.isArray(initialSequence) && initialSequence.length) {
+        gameState.pieceQueue = initialSequence.map(key => (PIECE_ORDER.includes(key) ? key : 'I'));
+    } else {
+        gameState.pieceQueue = [];
+    }
     ensurePieceQueue();
     return normalizedSeed;
 }
 
 function ensurePieceQueue(minSize = 6) {
     if (!gameState.pieceGenerator) return;
+    if (gameState.isOnlineMode && !gameState.isOnlineHost) {
+        return;
+    }
     while (gameState.pieceQueue.length < minSize) {
         const nextKey = gameState.pieceGenerator();
         gameState.pieceQueue.push(nextKey);
@@ -580,6 +587,12 @@ let gameState = {
     boardWidth: BASE_BOARD_WIDTH,
     sharedStats: { ...TEAM_SCORE_TEMPLATE },
     sharedStatsDirty: false,
+    stateDirty: false,
+    lastBroadcastTime: 0,
+    stateSequence: 0,
+    lastAuthoritativeSequence: 0,
+    isOnlineMode: false,
+    isOnlineHost: false,
     inputStates: new Map(),
     pieceGenerator: null,
     pieceQueue: [],
@@ -637,6 +650,10 @@ function createGamepadButtonState() {
 function resetSharedStats() {
     gameState.sharedStats = { ...TEAM_SCORE_TEMPLATE };
     gameState.sharedStatsDirty = true;
+}
+
+function markStateDirty() {
+    gameState.stateDirty = true;
 }
 
 function formatKeyLabel(code) {
@@ -783,6 +800,7 @@ class Player {
         }
 
         this.dropCounter = 0;
+        markStateDirty();
     }
 
     checkCollision(piece = this.currentPiece, pos = this.position) {
@@ -832,6 +850,7 @@ class Player {
             this.position.x -= dir;
         } else {
             soundManager.move();
+            markStateDirty();
             // Send online update if in online game
             if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
                 networkManager.sendPlayerInput({ action: 'move', direction: dir });
@@ -848,6 +867,7 @@ class Player {
         if (!this.checkCollision(rotated).collides) {
             this.currentPiece = rotated;
             soundManager.rotate();
+            markStateDirty();
             // Send online update if in online game
             if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
                 networkManager.sendPlayerInput({ action: 'rotate' });
@@ -868,6 +888,7 @@ class Player {
                 this.spawnPiece();
             }
         }
+        markStateDirty();
         this.dropCounter = 0;
         // Send online update if in online game
         if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
@@ -904,6 +925,7 @@ class Player {
             this.spawnPiece();
         }
         this.dropCounter = 0;
+        markStateDirty();
         // Send online update if in online game
         if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
             networkManager.sendPlayerInput({ action: 'hardDrop' });
@@ -922,6 +944,7 @@ class Player {
                 }
             }
         }
+        markStateDirty();
     }
 
     clearLines() {
@@ -986,6 +1009,7 @@ class Player {
         });
 
         gameState.sharedStatsDirty = true;
+        markStateDirty();
     }
 
     update(deltaTime) {
@@ -1069,6 +1093,11 @@ class UIManager {
         this.isOnlineMode = false; // Flag for online multiplayer mode
         this.networkPlayers = {}; // Map of network player IDs to local indices
         this.localPlayerIndex = -1; // Local player index in online mode
+        this.isOnlineHost = false;
+        this.stateBroadcastInterval = 40; // ms between authoritative state pushes
+        this.stateBroadcastSequence = 0;
+        this.lastStateSentAt = 0;
+        this.lastRemoteStateAt = 0;
 
         this.moveRepeatInterval = 135;
         this.softDropInitialDelay = 0;
@@ -1506,8 +1535,14 @@ class UIManager {
         this.touchPlayerIndex = 0;
         gameState.inputStates = new Map();
         resetSharedStats();
+        gameState.stateDirty = true;
+        gameState.lastBroadcastTime = 0;
+        gameState.stateSequence = 0;
+        gameState.lastAuthoritativeSequence = 0;
+        gameState.isOnlineMode = !!this.isOnlineMode;
+        gameState.isOnlineHost = !!this.isOnlineHost;
 
-        const seedUsed = initializePieceSystem(options.pieceSeed);
+        const seedUsed = initializePieceSystem(options.pieceSeed, options.pieceSequence);
 
         const container = document.getElementById('game-container');
         container.innerHTML = '';
@@ -1647,20 +1682,39 @@ class UIManager {
             this.pollGamepads();
 
             let touchStatusNeedsUpdate = false;
-            gameState.players.forEach(player => {
-                const wasGameOver = player.gameOver;
 
-                if (!player.gameOver) {
-                    player.update(deltaTime);
-                    this.applyContinuousInputs(player, deltaTime);
-                    this.updatePlayerInfo(player);
-                    this.drawNextPiece(player);
-                }
+            if (!this.isOnlineMode || this.isOnlineHost) {
+                gameState.players.forEach(player => {
+                    const wasGameOver = player.gameOver;
 
-                if (!wasGameOver && player.gameOver) {
-                    touchStatusNeedsUpdate = true;
-                }
-            });
+                    if (!player.gameOver) {
+                        player.update(deltaTime);
+                        this.applyContinuousInputs(player, deltaTime);
+                        this.updatePlayerInfo(player);
+                        this.drawNextPiece(player);
+                    }
+
+                    if (!wasGameOver && player.gameOver) {
+                        touchStatusNeedsUpdate = true;
+                    }
+                });
+            } else {
+                gameState.players.forEach(player => {
+                    const wasGameOver = player.gameOver;
+
+                    if (!player.gameOver) {
+                        if (this.isPlayerControllable(player)) {
+                            this.applyContinuousInputs(player, deltaTime);
+                        }
+                        this.updatePlayerInfo(player);
+                        this.drawNextPiece(player);
+                    }
+
+                    if (!wasGameOver && player.gameOver) {
+                        touchStatusNeedsUpdate = true;
+                    }
+                });
+            }
 
             this.drawBoard();
             this.updateTeamStatsIfNeeded();
@@ -1668,6 +1722,10 @@ class UIManager {
             if (touchStatusNeedsUpdate) {
                 this.refreshTouchStatus();
             }
+        }
+
+        if (this.isOnlineMode && this.isOnlineHost) {
+            this.maybeBroadcastState();
         }
 
         requestAnimationFrame((time) => this.gameLoop(time));
@@ -2350,8 +2408,13 @@ class UIManager {
 
         // Reset online mode flags
         this.isOnlineMode = false;
+        this.isOnlineHost = false;
         this.networkPlayers = {};
         this.localPlayerIndex = -1;
+        gameState.isOnlineMode = false;
+        gameState.stateDirty = false;
+        gameState.lastAuthoritativeSequence = 0;
+        gameState.isOnlineHost = false;
 
         this.showScreen('mainMenu');
         this.refreshTouchStatus();
@@ -2578,6 +2641,14 @@ class UIManager {
 
         networkManager.on('gameStart', (data) => {
             this.startOnlineGame(data);
+        });
+
+        networkManager.on('gameState', (data) => {
+            this.receiveAuthoritativeState(data);
+        });
+
+        networkManager.on('hostChanged', (payload) => {
+            this.handleHostChanged(payload);
         });
 
         networkManager.on('error', (message) => {
@@ -3168,12 +3239,16 @@ class UIManager {
     startOnlineGame(data) {
         // Map network players to game players
         const numPlayers = data.players.length;
-        
+
         // Store network player info for synchronization
         this.networkPlayers = {};
         this.localPlayerIndex = -1;
         this.isOnlineMode = true; // Flag to indicate online mode
-        
+        this.isOnlineHost = !!(networkManager.socket && data.hostId === networkManager.socket.id);
+        this.stateBroadcastSequence = 0;
+        this.lastStateSentAt = performance.now ? performance.now() : Date.now();
+        this.lastRemoteStateAt = 0;
+
         // Update game state with player colors from network and map IDs
         data.players.forEach((netPlayer, index) => {
             gameState.settings.colors[index] = netPlayer.color;
@@ -3184,22 +3259,26 @@ class UIManager {
                 this.localPlayerIndex = index;
             }
         });
-        
+
         // Start the game with proper player count
-        this.startGame(numPlayers, { pieceSeed: data.pieceSeed });
-        
+        this.startGame(numPlayers, { pieceSeed: data.pieceSeed, pieceSequence: data.pieceSequence });
+
         // Set up online synchronization
         this.setupOnlineSync();
-        
+
+        if (!this.isOnlineHost) {
+            networkManager.requestSync();
+        }
+
         console.log('Online game started with players:', data.players);
         console.log('Local player index:', this.localPlayerIndex);
     }
     
     setupOnlineSync() {
         if (!networkManager.socket) return;
-        
+
         const VALID_ACTIONS = ['move', 'rotate', 'drop', 'hardDrop'];
-        
+
         // Listen for remote player inputs
         networkManager.on('playerInput', (data) => {
             // Validate input data
@@ -3241,6 +3320,169 @@ class UIManager {
                 }
             }
         });
+    }
+
+    buildAuthoritativeStatePayload() {
+        const sequence = this.stateBroadcastSequence + 1;
+        const boardSnapshot = gameState.board.map(row => [...row]);
+        const queueSnapshot = gameState.pieceQueue.slice(0, 48);
+        const playersSnapshot = gameState.players.map((player, index) => ({
+            index,
+            position: { x: player.position.x, y: player.position.y },
+            dropCounter: player.dropCounter,
+            dropInterval: player.dropInterval,
+            gameOver: player.gameOver,
+            score: player.score,
+            lines: player.lines,
+            level: player.level,
+            color: player.color,
+            currentPiece: player.currentPiece ? player.currentPiece.map(row => [...row]) : null,
+            nextPiece: player.nextPiece ? player.nextPiece.map(row => [...row]) : null
+        }));
+
+        return {
+            sequence,
+            board: boardSnapshot,
+            queue: queueSnapshot,
+            players: playersSnapshot,
+            sharedStats: { ...gameState.sharedStats },
+            isGameOver: gameState.isGameOver
+        };
+    }
+
+    maybeBroadcastState() {
+        if (!this.isOnlineHost || !networkManager.connected) {
+            return;
+        }
+
+        const now = performance.now ? performance.now() : Date.now();
+        const intervalMet = (now - this.lastStateSentAt) >= this.stateBroadcastInterval;
+
+        if (!intervalMet && !gameState.stateDirty && !gameState.sharedStatsDirty) {
+            return;
+        }
+
+        const payload = this.buildAuthoritativeStatePayload();
+        this.stateBroadcastSequence = payload.sequence;
+        gameState.stateSequence = payload.sequence;
+
+        networkManager.sendGameState(payload);
+        this.lastStateSentAt = now;
+        gameState.stateDirty = false;
+        gameState.sharedStatsDirty = false;
+    }
+
+    receiveAuthoritativeState(data = {}) {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (!data || typeof data.sequence !== 'number') {
+            return;
+        }
+
+        if (data.sequence <= gameState.lastAuthoritativeSequence) {
+            return;
+        }
+
+        gameState.lastAuthoritativeSequence = data.sequence;
+        this.lastRemoteStateAt = performance.now ? performance.now() : Date.now();
+
+        if (Array.isArray(data.board) && data.board.length) {
+            gameState.board = data.board.map(row => Array.isArray(row) ? [...row] : []);
+        }
+
+        if (Array.isArray(data.queue) && data.queue.length) {
+            gameState.pieceQueue = data.queue.slice();
+            ensurePieceQueue();
+        }
+
+        if (Array.isArray(data.players)) {
+            data.players.forEach((snapshot, index) => {
+                const player = gameState.players[index];
+                if (!player) return;
+
+                if (snapshot.position) {
+                    player.position.x = typeof snapshot.position.x === 'number' ? snapshot.position.x : player.position.x;
+                    player.position.y = typeof snapshot.position.y === 'number' ? snapshot.position.y : player.position.y;
+                }
+
+                if (Array.isArray(snapshot.currentPiece)) {
+                    player.currentPiece = snapshot.currentPiece.map(row => Array.isArray(row) ? [...row] : []);
+                }
+
+                if (Array.isArray(snapshot.nextPiece)) {
+                    player.nextPiece = snapshot.nextPiece.map(row => Array.isArray(row) ? [...row] : []);
+                }
+
+                if (typeof snapshot.dropCounter === 'number') {
+                    player.dropCounter = snapshot.dropCounter;
+                }
+
+                if (typeof snapshot.dropInterval === 'number') {
+                    player.dropInterval = snapshot.dropInterval;
+                }
+
+                if (typeof snapshot.score === 'number') {
+                    player.score = snapshot.score;
+                }
+
+                if (typeof snapshot.lines === 'number') {
+                    player.lines = snapshot.lines;
+                }
+
+                if (typeof snapshot.level === 'number') {
+                    player.level = snapshot.level;
+                }
+
+                if (typeof snapshot.color === 'string') {
+                    player.color = snapshot.color;
+                }
+
+                player.gameOver = !!snapshot.gameOver;
+
+                this.updatePlayerInfo(player);
+                this.drawNextPiece(player);
+            });
+        }
+
+        if (data.sharedStats && typeof data.sharedStats === 'object') {
+            gameState.sharedStats = {
+                ...gameState.sharedStats,
+                ...data.sharedStats
+            };
+            gameState.sharedStatsDirty = true;
+            this.updateTeamStatsIfNeeded();
+        }
+
+        if (typeof data.isGameOver === 'boolean') {
+            gameState.isGameOver = data.isGameOver;
+        }
+
+        this.drawBoard();
+    }
+
+    handleHostChanged(payload = {}) {
+        if (!this.isOnlineMode) {
+            return;
+        }
+
+        const newHostId = payload.hostId;
+        if (!newHostId || !networkManager.socket) {
+            return;
+        }
+
+        const wasHost = this.isOnlineHost;
+        this.isOnlineHost = networkManager.socket.id === newHostId;
+
+        if (this.isOnlineHost) {
+            this.stateBroadcastSequence = gameState.stateSequence || 0;
+            this.lastStateSentAt = performance.now ? performance.now() : Date.now();
+            gameState.stateDirty = true;
+            gameState.sharedStatsDirty = true;
+        } else if (wasHost) {
+            networkManager.requestSync();
+        }
     }
 
     showStyledMessage(title, message, type = 'info') {
