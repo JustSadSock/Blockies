@@ -434,6 +434,73 @@ const SHAPES = {
     L: [[0, 0, 1], [1, 1, 1]]
 };
 
+const PIECE_ORDER = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+function cloneShape(shape) {
+    return shape.map(row => [...row]);
+}
+
+function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function() {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function shuffleWithRng(items, rng) {
+    const list = [...items];
+    for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+}
+
+function createPieceGenerator(seed) {
+    const rng = mulberry32(seed >>> 0);
+    let bag = [];
+    return () => {
+        if (!bag.length) {
+            bag = shuffleWithRng(PIECE_ORDER, rng);
+        }
+        return bag.pop();
+    };
+}
+
+function initializePieceSystem(seed) {
+    const normalizedSeed = Number.isFinite(seed) ? (seed >>> 0) : Math.floor(Math.random() * 0xffffffff);
+    gameState.pieceSeed = normalizedSeed;
+    gameState.pieceGenerator = createPieceGenerator(normalizedSeed);
+    gameState.pieceQueue = [];
+    ensurePieceQueue();
+    return normalizedSeed;
+}
+
+function ensurePieceQueue(minSize = 6) {
+    if (!gameState.pieceGenerator) return;
+    while (gameState.pieceQueue.length < minSize) {
+        const nextKey = gameState.pieceGenerator();
+        gameState.pieceQueue.push(nextKey);
+    }
+}
+
+function takeNextPieceMatrix() {
+    if (!gameState.pieceGenerator) {
+        initializePieceSystem();
+    }
+
+    if (!gameState.pieceQueue.length) {
+        ensurePieceQueue();
+    }
+
+    const shapeKey = gameState.pieceQueue.shift();
+    ensurePieceQueue();
+    return cloneShape(SHAPES[shapeKey]);
+}
+
 // Default colors for players - Retro-futurism palette
 const DEFAULT_COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
 
@@ -514,6 +581,9 @@ let gameState = {
     sharedStats: { ...TEAM_SCORE_TEMPLATE },
     sharedStatsDirty: false,
     inputStates: new Map(),
+    pieceGenerator: null,
+    pieceQueue: [],
+    pieceSeed: 0,
     settings: {
         colors: [...DEFAULT_COLORS],
         keys: JSON.parse(JSON.stringify(DEFAULT_KEYS))
@@ -663,19 +733,13 @@ class Player {
     }
 
     init() {
-        this.nextPiece = this.randomPiece();
+        this.nextPiece = takeNextPieceMatrix();
         this.spawnPiece();
-    }
-
-    randomPiece() {
-        const shapes = Object.keys(SHAPES);
-        const shape = shapes[Math.floor(Math.random() * shapes.length)];
-        return SHAPES[shape];
     }
 
     spawnPiece() {
         this.currentPiece = this.nextPiece;
-        this.nextPiece = this.randomPiece();
+        this.nextPiece = takeNextPieceMatrix();
         const pieceWidth = this.currentPiece[0].length;
         const boardWidth = getBoardWidth();
         const preferredX = Math.min(
@@ -984,6 +1048,8 @@ class UIManager {
         this.touchControls = document.getElementById('touch-controls');
         this.touchStatus = document.getElementById('touch-status');
         this.touchPlayerIndex = 0;
+        this.touchPreferred = this.detectTouchPreference();
+        this.coarsePointerQuery = null;
         this.teamStats = document.getElementById('team-stats');
         this.scoreCard = document.getElementById('team-score-card');
         this.comboIndicator = document.getElementById('combo-indicator');
@@ -1004,16 +1070,69 @@ class UIManager {
         this.networkPlayers = {}; // Map of network player IDs to local indices
         this.localPlayerIndex = -1; // Local player index in online mode
 
-        this.moveRepeatInterval = 90;
+        this.moveRepeatInterval = 135;
         this.softDropInitialDelay = 0;
         this.softDropRepeatInterval = 55;
+
+        if (window.matchMedia) {
+            try {
+                const query = window.matchMedia('(pointer: coarse)');
+                const handleChange = (event) => {
+                    this.touchPreferred = this.detectTouchPreference(event.matches);
+                    this.updateTouchControlsVisibility(true);
+                };
+                if (typeof query.addEventListener === 'function') {
+                    query.addEventListener('change', handleChange);
+                } else if (typeof query.addListener === 'function') {
+                    query.addListener(handleChange);
+                }
+                this.coarsePointerQuery = query;
+            } catch (error) {
+                console.warn('Pointer media query not supported', error);
+            }
+        }
 
         this.setupEventListeners();
         this.initTouchControls();
         this.initGamepads();
+        this.updateTouchControlsVisibility();
         window.addEventListener('resize', () => this.handleResize());
     }
-    
+
+    detectTouchPreference(explicitCoarseMatch) {
+        const coarseMatches = typeof explicitCoarseMatch === 'boolean'
+            ? explicitCoarseMatch
+            : (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false);
+        const hasTouchPoints = typeof navigator !== 'undefined'
+            && typeof navigator.maxTouchPoints === 'number'
+            && navigator.maxTouchPoints > 0;
+        const legacyTouch = typeof window !== 'undefined' && 'ontouchstart' in window;
+        return coarseMatches || hasTouchPoints || legacyTouch;
+    }
+
+    shouldShowTouchControls() {
+        return !!this.touchPreferred;
+    }
+
+    updateTouchControlsVisibility(forceRefresh = false) {
+        if (!this.touchControls) return;
+
+        const isGameActive = this.screens.gameScreen?.classList.contains('active');
+        if (isGameActive && this.shouldShowTouchControls()) {
+            if (forceRefresh || !this.touchControls.classList.contains('visible')) {
+                this.touchControls.classList.add('visible');
+                this.refreshTouchStatus();
+            }
+        } else {
+            if (this.touchControls.classList.contains('visible')) {
+                this.touchControls.classList.remove('visible');
+            }
+            if (this.touchStatus) {
+                this.touchStatus.textContent = this.shouldShowTouchControls() ? t('startGameForTouch') : '';
+            }
+        }
+    }
+
     // Helper method to check if a player can be controlled locally
     isPlayerControllable(player) {
         if (player.gameOver) return false;
@@ -1229,16 +1348,23 @@ class UIManager {
         });
 
         if (this.touchStatus) {
-            this.touchStatus.textContent = t('startGameForTouch');
+            this.touchStatus.textContent = this.shouldShowTouchControls()
+                ? t('startGameForTouch')
+                : '';
         }
     }
 
     refreshTouchStatus() {
         if (!this.touchControls || !this.touchStatus) return;
 
+        if (!this.shouldShowTouchControls() || !this.touchControls.classList.contains('visible')) {
+            this.touchStatus.textContent = this.shouldShowTouchControls() ? t('startGameForTouch') : '';
+            return;
+        }
+
         const activePlayer = this.getTouchPlayer();
         if (activePlayer && !gameState.isGameOver) {
-            this.touchStatus.textContent = currentLanguage === 'ru' 
+            this.touchStatus.textContent = currentLanguage === 'ru'
                 ? `Сенсорное управление: Игрок ${activePlayer.id + 1}`
                 : `Touch controls: Player ${activePlayer.id + 1}`;
         } else if (gameState.players.length && gameState.players.every(player => player.gameOver)) {
@@ -1251,7 +1377,7 @@ class UIManager {
     }
 
     getTouchPlayer() {
-        if (!gameState.players.length) {
+        if (!this.shouldShowTouchControls() || !gameState.players.length) {
             return null;
         }
 
@@ -1270,7 +1396,7 @@ class UIManager {
     }
 
     handleTouchAction(action) {
-        if (gameState.isPaused || gameState.isGameOver) {
+        if (!this.shouldShowTouchControls() || gameState.isPaused || gameState.isGameOver) {
             return;
         }
 
@@ -1358,17 +1484,7 @@ class UIManager {
             }
         }
 
-        if (this.touchControls) {
-            if (screenName === 'gameScreen') {
-                this.touchControls.classList.add('visible');
-                this.refreshTouchStatus();
-            } else {
-                this.touchControls.classList.remove('visible');
-                if (this.touchStatus) {
-                    this.touchStatus.textContent = t('startGameForTouch');
-                }
-            }
-        }
+        this.updateTouchControlsVisibility(true);
     }
 
     showModal(modalName) {
@@ -1379,7 +1495,7 @@ class UIManager {
         this.modals[modalName].classList.remove('active');
     }
 
-    startGame(numPlayers) {
+    startGame(numPlayers, options = {}) {
         gameState.numPlayers = numPlayers;
         gameState.isPaused = false;
         gameState.isGameOver = false;
@@ -1390,6 +1506,8 @@ class UIManager {
         this.touchPlayerIndex = 0;
         gameState.inputStates = new Map();
         resetSharedStats();
+
+        const seedUsed = initializePieceSystem(options.pieceSeed);
 
         const container = document.getElementById('game-container');
         container.innerHTML = '';
@@ -1412,6 +1530,10 @@ class UIManager {
 
         const boardWrapper = document.createElement('div');
         boardWrapper.id = 'shared-board';
+        boardWrapper.style.setProperty('--board-aspect', `${gameState.boardWidth}/${BOARD_HEIGHT}`);
+        if ('aspectRatio' in boardWrapper.style) {
+            boardWrapper.style.aspectRatio = `${gameState.boardWidth} / ${BOARD_HEIGHT}`;
+        }
 
         const canvas = document.createElement('canvas');
         canvas.id = 'game-canvas';
@@ -1465,6 +1587,8 @@ class UIManager {
         this.refreshTouchStatus();
         this.scheduleBoardScaleUpdate();
         requestAnimationFrame((time) => this.gameLoop(time));
+
+        return seedUsed;
     }
     
     createNextPiecePreview(player, container) {
@@ -1883,6 +2007,7 @@ class UIManager {
     }
 
     handleResize() {
+        this.updateTouchControlsVisibility();
         if (!this.screens.gameScreen.classList.contains('active')) {
             return;
         }
@@ -1980,10 +2105,17 @@ class UIManager {
         const displayHeight = Math.max(1, Math.floor(boardHeight * scale));
 
         boardWrapper.style.setProperty('--board-max-width', `${displayWidth}px`);
-        canvas.style.width = `${displayWidth}px`;
-        canvas.style.height = `${displayHeight}px`;
-        canvas.style.maxWidth = `${boardWidth}px`;
-        canvas.style.maxHeight = `${boardHeight}px`;
+        boardWrapper.style.maxWidth = `${boardWidth}px`;
+        boardWrapper.style.maxHeight = `${boardHeight}px`;
+        if (!('aspectRatio' in boardWrapper.style)) {
+            boardWrapper.style.height = `${displayHeight}px`;
+        } else {
+            boardWrapper.style.removeProperty('height');
+        }
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        canvas.style.maxWidth = '100%';
+        canvas.style.maxHeight = '100%';
     }
 
     getActionForCode(player, code) {
@@ -2212,14 +2344,18 @@ class UIManager {
         gameState.players = [];
         gameState.inputStates = new Map();
         resetSharedStats();
-        
+        gameState.pieceGenerator = null;
+        gameState.pieceQueue = [];
+        gameState.pieceSeed = 0;
+
         // Reset online mode flags
         this.isOnlineMode = false;
         this.networkPlayers = {};
         this.localPlayerIndex = -1;
-        
+
         this.showScreen('mainMenu');
         this.refreshTouchStatus();
+        this.updateTouchControlsVisibility();
 
         const teamStats = document.getElementById('team-stats');
         if (teamStats) {
@@ -3050,7 +3186,7 @@ class UIManager {
         });
         
         // Start the game with proper player count
-        this.startGame(numPlayers);
+        this.startGame(numPlayers, { pieceSeed: data.pieceSeed });
         
         // Set up online synchronization
         this.setupOnlineSync();

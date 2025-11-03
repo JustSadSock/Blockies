@@ -35,6 +35,7 @@ class Room {
         this.usedColors = new Set();
         this.isPrivate = false;
         this.accessCode = null;
+        this.currentGame = null;
     }
 
     addPlayer(playerId, playerName) {
@@ -100,6 +101,25 @@ class Room {
 
     allPlayersReady() {
         return this.players.length > 0 && this.players.every(p => p.ready);
+    }
+
+    beginGame(seed) {
+        this.players.forEach(player => {
+            player.ready = false;
+        });
+        this.gameStarted = true;
+        this.currentGame = {
+            seed,
+            startedAt: Date.now()
+        };
+    }
+
+    resetGameState() {
+        this.gameStarted = false;
+        this.currentGame = null;
+        this.players.forEach(player => {
+            player.ready = false;
+        });
     }
 
     toJSON() {
@@ -355,10 +375,14 @@ io.on('connection', (socket) => {
                     // Check if all players are ready
                     // Allow solo practice (1 player) or multiplayer (2+ players)
                     if (room.allPlayersReady() && room.players.length >= 1) {
-                        room.gameStarted = true;
+                        const pieceSeed = Math.floor(Math.random() * 0xffffffff);
+                        room.beginGame(pieceSeed);
                         io.to(player.roomId).emit('game-start', {
-                            players: room.players
+                            players: room.players,
+                            pieceSeed
                         });
+                        io.to(player.roomId).emit('room-update', room.getFullInfo());
+                        broadcastRoomsList();
                         console.log(`Game starting in room ${room.name} with ${room.players.length} player(s)`);
                     }
                 }
