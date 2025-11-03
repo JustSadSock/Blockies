@@ -12,7 +12,7 @@
 </head>
 <body>
     <div class="container">
-        <header>
+        <header class="top-bar">
             <h1><span>Blockies</span> Arcade</h1>
             <div class="menu-buttons">
                 <button id="pause-btn" class="btn btn-secondary" style="display: none;">⏸ <span data-i18n="pause">Pause</span></button>
@@ -26,151 +26,155 @@
             </div>
         </header>
 
-        <!-- Main Menu -->
-        <div id="main-menu" class="screen active">
-            <div class="game-info">
-                <h2 data-i18n="welcome">Welcome to Blockies!</h2>
-                <p data-i18n="tagline">Stack vibrant neon blocks in this modern take on the classic puzzle game. Play solo or team up with friends!</p>
-                <ul class="feature-list">
-                    <li>🎮 <span data-i18n="multipleGameModes">Multiple Game Modes</span></li>
-                    <li>👥 <span data-i18n="localAndOnlineMultiplayer">Local & Online Multiplayer</span></li>
-                    <li>⚡ <span data-i18n="fastPacedAction">Fast-Paced Action</span></li>
-                </ul>
-                <div class="mode-selection">
-                    <button id="mode-single" class="mode-btn mode-btn-primary">
-                        <span class="mode-icon">🎯</span>
-                        <span class="mode-title" data-i18n="singlePlayer">Single Player</span>
-                        <span class="mode-desc" data-i18n="playSolo">Play solo</span>
-                    </button>
-                    <button id="mode-local" class="mode-btn mode-btn-success">
-                        <span class="mode-icon">👥</span>
-                        <span class="mode-title" data-i18n="localCoop">Local Co-op</span>
-                        <span class="mode-desc" data-i18n="playTogether">Play together</span>
-                    </button>
-                    <button id="mode-online" class="mode-btn mode-btn-info">
-                        <span class="mode-icon">🌐</span>
-                        <span class="mode-title" data-i18n="online">Online</span>
-                        <span class="mode-desc" data-i18n="playOverNetwork">Play over network</span>
-                    </button>
+        <main id="app-main" class="app-main">
+            <!-- Main Menu -->
+            <section id="main-menu" class="screen screen--centered active" aria-labelledby="main-menu-title">
+                <div class="game-info">
+                    <h2 id="main-menu-title" data-i18n="welcome">Welcome to Blockies!</h2>
+                    <p data-i18n="tagline">Stack vibrant neon blocks in this modern take on the classic puzzle game. Play solo or team up with friends!</p>
+                    <ul class="feature-list">
+                        <li>🎮 <span data-i18n="multipleGameModes">Multiple Game Modes</span></li>
+                        <li>👥 <span data-i18n="localAndOnlineMultiplayer">Local & Online Multiplayer</span></li>
+                        <li>⚡ <span data-i18n="fastPacedAction">Fast-Paced Action</span></li>
+                    </ul>
+                    <div class="mode-selection">
+                        <button id="mode-single" class="mode-btn mode-btn-primary" type="button">
+                            <span class="mode-icon">🎯</span>
+                            <span class="mode-title" data-i18n="singlePlayer">Single Player</span>
+                            <span class="mode-desc" data-i18n="playSolo">Play solo</span>
+                        </button>
+                        <button id="mode-local" class="mode-btn mode-btn-success" type="button">
+                            <span class="mode-icon">👥</span>
+                            <span class="mode-title" data-i18n="localCoop">Local Co-op</span>
+                            <span class="mode-desc" data-i18n="playTogether">Play together</span>
+                        </button>
+                        <button id="mode-online" class="mode-btn mode-btn-info" type="button">
+                            <span class="mode-icon">🌐</span>
+                            <span class="mode-title" data-i18n="online">Online</span>
+                            <span class="mode-desc" data-i18n="playOverNetwork">Play over network</span>
+                        </button>
+                    </div>
                 </div>
-            </div>
-        </div>
+            </section>
 
-        <!-- Local Co-op Setup Screen -->
-        <div id="coop-setup-screen" class="screen">
-            <h2>🎮 <span data-i18n="localCoopSetup">Local Co-op Setup</span></h2>
-            <div class="coop-setup-container">
-                <div class="player-count-section">
-                    <h3 data-i18n="numberOfPlayers">Number of Players</h3>
-                    <div class="player-count-selector">
-                        <button class="player-count-btn active" data-count="1">1</button>
-                        <button class="player-count-btn" data-count="2">2</button>
-                        <button class="player-count-btn" data-count="3">3</button>
-                        <button class="player-count-btn" data-count="4">4</button>
-                    </div>
-                </div>
-                <div id="coop-players-config" class="coop-players-config">
-                    <!-- Player configurations will be dynamically added here -->
-                </div>
-                <div class="coop-setup-actions">
-                    <button id="start-coop-btn" class="btn btn-primary btn-large">🚀 <span data-i18n="startGame">Start Game</span></button>
-                    <button id="cancel-coop-btn" class="btn btn-secondary">← <span data-i18n="backToMenu">Back to Menu</span></button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Online Lobby Screen -->
-        <div id="online-lobby-screen" class="screen">
-            <h2>🌐 Online Multiplayer</h2>
-            <div id="connection-status" class="connection-status">
-                <span class="status-indicator"></span>
-                <span class="status-text">Connecting to server...</span>
-            </div>
-            <div class="nickname-section">
-                <label for="nickname-input">Your Nickname:</label>
-                <input type="text" id="nickname-input" maxlength="20" placeholder="Enter your name...">
-            </div>
-            <div class="online-lobby-container">
-                <div class="rooms-section">
-                    <h3>Available Rooms</h3>
-                    <div id="rooms-list" class="rooms-list">
-                        <!-- Rooms will be dynamically added here -->
-                    </div>
-                    <button id="create-room-btn" class="btn btn-primary">➕ Create New Room</button>
-                </div>
-                <div id="room-view" class="room-view" style="display: none;">
-                    <div class="room-header">
-                        <h3 id="room-name">Room Name</h3>
-                        <button id="leave-room-btn" class="btn btn-secondary btn-small">← Leave Room</button>
-                    </div>
-                    <div class="room-players">
-                        <h4>Players in Room</h4>
-                        <div id="room-players-list" class="room-players-list">
-                            <!-- Players will be dynamically added here -->
+            <!-- Local Co-op Setup Screen -->
+            <section id="coop-setup-screen" class="screen" aria-labelledby="coop-setup-title">
+                <h2 id="coop-setup-title">🎮 <span data-i18n="localCoopSetup">Local Co-op Setup</span></h2>
+                <div class="coop-setup-container">
+                    <div class="player-count-section">
+                        <h3 data-i18n="numberOfPlayers">Number of Players</h3>
+                        <div class="player-count-selector">
+                            <button class="player-count-btn active" data-count="1" type="button">1</button>
+                            <button class="player-count-btn" data-count="2" type="button">2</button>
+                            <button class="player-count-btn" data-count="3" type="button">3</button>
+                            <button class="player-count-btn" data-count="4" type="button">4</button>
                         </div>
                     </div>
-                    <div class="color-selector-section">
-                        <h4>Your Color</h4>
-                        <div id="color-options" class="color-options">
-                            <!-- Color options will be dynamically added here -->
+                    <div id="coop-players-config" class="coop-players-config">
+                        <!-- Player configurations will be dynamically added here -->
+                    </div>
+                    <div class="coop-setup-actions">
+                        <button id="start-coop-btn" class="btn btn-primary btn-large" type="button">🚀 <span data-i18n="startGame">Start Game</span></button>
+                        <button id="cancel-coop-btn" class="btn btn-secondary" type="button">← <span data-i18n="backToMenu">Back to Menu</span></button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Online Lobby Screen -->
+            <section id="online-lobby-screen" class="screen" aria-labelledby="online-lobby-title">
+                <h2 id="online-lobby-title">🌐 <span data-i18n="onlineMultiplayer">Online Multiplayer</span></h2>
+                <div id="connection-status" class="connection-status" role="status" aria-live="polite">
+                    <span class="status-indicator"></span>
+                    <span class="status-text" data-i18n="connectingToServer">Connecting to server...</span>
+                </div>
+                <div class="nickname-section">
+                    <label for="nickname-input" data-i18n="yourNickname">Your Nickname:</label>
+                    <input type="text" id="nickname-input" maxlength="20" placeholder="Enter your name..." data-i18n-placeholder="enterYourName">
+                </div>
+                <div class="online-lobby-layout">
+                    <section class="rooms-section" aria-labelledby="rooms-title">
+                        <div class="section-header">
+                            <h3 id="rooms-title" data-i18n="availableRooms">Available Rooms</h3>
+                            <button id="create-room-btn" class="btn btn-primary btn-small" type="button">➕ <span data-i18n="createNewRoom">Create New Room</span></button>
+                        </div>
+                        <div id="rooms-list" class="rooms-list" role="list">
+                            <!-- Rooms will be dynamically added here -->
+                        </div>
+                    </section>
+                    <section id="room-view" class="room-view" hidden aria-live="polite">
+                        <div class="room-header">
+                            <h3 id="room-name">Room Name</h3>
+                            <button id="leave-room-btn" class="btn btn-secondary btn-small" type="button">← <span data-i18n="leaveRoom">Leave Room</span></button>
+                        </div>
+                        <div class="room-players">
+                            <h4 data-i18n="playersInRoom">Players in Room</h4>
+                            <div id="room-players-list" class="room-players-list">
+                                <!-- Players will be dynamically added here -->
+                            </div>
+                        </div>
+                        <div class="color-selector-section">
+                            <h4 data-i18n="yourColor">Your Color</h4>
+                            <div id="color-options" class="color-options" role="list">
+                                <!-- Color options will be dynamically added here -->
+                            </div>
+                        </div>
+                        <button id="ready-btn" class="btn btn-primary btn-large" type="button">✓ <span data-i18n="ready">Ready</span></button>
+                        <div id="room-status" class="room-status" role="status" aria-live="polite" data-i18n="waitingForPlayers">Waiting for players...</div>
+                    </section>
+                </div>
+                <button id="back-from-online-btn" class="btn btn-secondary" type="button">← <span data-i18n="backToMenu">Back to Menu</span></button>
+            </section>
+
+            <!-- Game Screen -->
+            <section id="game-screen" class="screen" aria-live="polite">
+                <div id="team-stats" class="team-stats">
+                    <div id="team-score-card" class="team-score-card">
+                        <div class="score-card__label" data-i18n="teamScore">Team Score</div>
+                        <div id="team-score" class="score-card__value">0</div>
+                        <div class="score-card__meta">
+                            <span id="team-lines" class="score-card__meta-item">0 <span data-i18n="lines">lines</span></span>
                         </div>
                     </div>
-                    <button id="ready-btn" class="btn btn-primary btn-large">✓ Ready</button>
-                    <div id="room-status" class="room-status">Waiting for players...</div>
+                    <div id="combo-indicator" class="combo-indicator" title="">
+                        <span id="combo-label" data-i18n="comboReady">Combo ready</span>
+                        <span id="combo-bonus"></span>
+                        <span class="combo-help">ℹ️</span>
+                    </div>
+                    <div id="clear-feed" class="clear-feed"></div>
                 </div>
-            </div>
-            <button id="back-from-online-btn" class="btn btn-secondary">← Back to Menu</button>
-        </div>
-
-        <!-- Game Screen -->
-        <div id="game-screen" class="screen">
-            <div id="team-stats" class="team-stats">
-                <div id="team-score-card" class="team-score-card">
-                    <div class="score-card__label" data-i18n="teamScore">Team Score</div>
-                    <div id="team-score" class="score-card__value">0</div>
-                    <div class="score-card__meta">
-                        <span id="team-lines" class="score-card__meta-item">0 <span data-i18n="lines">lines</span></span>
+                <div id="next-pieces-preview" class="next-pieces-preview">
+                    <!-- Next pieces will be dynamically created here -->
+                </div>
+                <div id="game-container">
+                    <!-- Player boards will be dynamically created here -->
+                </div>
+                <div id="touch-controls" class="touch-controls">
+                    <div id="touch-status" class="touch-status"></div>
+                    <div class="touch-row">
+                        <button class="touch-btn" data-action="left" data-i18n="left">Left</button>
+                        <button class="touch-btn" data-action="down" data-i18n="down">Down</button>
+                        <button class="touch-btn" data-action="right" data-i18n="right">Right</button>
+                    </div>
+                    <div class="touch-row">
+                        <button class="touch-btn" data-action="rotate" data-i18n="rotate">Rotate</button>
+                        <button class="touch-btn" data-action="drop" data-i18n="drop">Drop</button>
                     </div>
                 </div>
-                <div id="combo-indicator" class="combo-indicator" title="">
-                    <span id="combo-label" data-i18n="comboReady">Combo ready</span>
-                    <span id="combo-bonus"></span>
-                    <span class="combo-help">ℹ️</span>
-                </div>
-                <div id="clear-feed" class="clear-feed"></div>
-            </div>
-            <div id="next-pieces-preview" class="next-pieces-preview">
-                <!-- Next pieces will be dynamically created here -->
-            </div>
-            <div id="game-container">
-                <!-- Player boards will be dynamically created here -->
-            </div>
-            <div id="touch-controls" class="touch-controls">
-                <div id="touch-status" class="touch-status"></div>
-                <div class="touch-row">
-                    <button class="touch-btn" data-action="left" data-i18n="left">Left</button>
-                    <button class="touch-btn" data-action="down" data-i18n="down">Down</button>
-                    <button class="touch-btn" data-action="right" data-i18n="right">Right</button>
-                </div>
-                <div class="touch-row">
-                    <button class="touch-btn" data-action="rotate" data-i18n="rotate">Rotate</button>
-                    <button class="touch-btn" data-action="drop" data-i18n="drop">Drop</button>
-                </div>
-            </div>
-        </div>
+            </section>
 
-        <!-- Settings Screen -->
-        <div id="settings-screen" class="screen">
-            <h2 data-i18n="settings">Settings</h2>
-            <div id="settings-container">
-                <!-- Settings will be dynamically created here -->
-            </div>
-            <div class="settings-actions">
-                <button id="save-settings-btn" class="btn btn-primary" data-i18n="saveSettings">Save Settings</button>
-                <button id="reset-settings-btn" class="btn btn-warning" data-i18n="resetToDefault">Reset to Default</button>
-                <button id="cancel-settings-btn" class="btn btn-secondary" data-i18n="cancel">Cancel</button>
-            </div>
-        </div>
+            <!-- Settings Screen -->
+            <section id="settings-screen" class="screen" aria-labelledby="settings-title">
+                <h2 id="settings-title" data-i18n="settings">Settings</h2>
+                <div id="settings-container">
+                    <!-- Settings will be dynamically created here -->
+                </div>
+                <div class="settings-actions">
+                    <button id="save-settings-btn" class="btn btn-primary" data-i18n="saveSettings">Save Settings</button>
+                    <button id="reset-settings-btn" class="btn btn-warning" data-i18n="resetToDefault">Reset to Default</button>
+                    <button id="cancel-settings-btn" class="btn btn-secondary" data-i18n="cancel">Cancel</button>
+                </div>
+            </section>
+        </main>
 
         <!-- Pause Menu -->
         <div id="pause-menu" class="modal">

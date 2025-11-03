@@ -95,6 +95,11 @@ const TRANSLATIONS = {
         yourColor: "Your Color",
         ready: "Ready",
         waitingForPlayers: "Waiting for players...",
+        playersReadyLabel: "players ready",
+        startingGame: "Starting game...",
+        playersLabel: "players",
+        roomOpen: "Open",
+        roomInGame: "In game",
         leaveRoom: "Leave Room",
         backToMenu: "Back to Menu",
         
@@ -208,6 +213,11 @@ const TRANSLATIONS = {
         yourColor: "Ваш цвет",
         ready: "Готов",
         waitingForPlayers: "Ожидание игроков...",
+        playersReadyLabel: "игроков готовы",
+        startingGame: "Запуск игры...",
+        playersLabel: "игроков",
+        roomOpen: "Свободна",
+        roomInGame: "В игре",
         leaveRoom: "Покинуть комнату",
         backToMenu: "Назад в меню",
         
@@ -696,20 +706,23 @@ class Player {
         return result;
     }
 
-    move(dir) {
+    move(dir, options = {}) {
+        const { propagate = true } = options;
+
         this.position.x += dir;
         if (this.checkCollision().collides) {
             this.position.x -= dir;
         } else {
             soundManager.move();
             // Send online update if in online game
-            if (typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
                 networkManager.sendPlayerInput({ action: 'move', direction: dir });
             }
         }
     }
 
-    rotate() {
+    rotate(options = {}) {
+        const { propagate = true } = options;
         const rotated = this.currentPiece[0].map((_, i) =>
             this.currentPiece.map(row => row[i]).reverse()
         );
@@ -718,13 +731,14 @@ class Player {
             this.currentPiece = rotated;
             soundManager.rotate();
             // Send online update if in online game
-            if (typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
                 networkManager.sendPlayerInput({ action: 'rotate' });
             }
         }
     }
 
-    drop() {
+    drop(options = {}) {
+        const { propagate = true } = options;
         this.position.y++;
         const collision = this.checkCollision();
         if (collision.collides) {
@@ -738,12 +752,13 @@ class Player {
         }
         this.dropCounter = 0;
         // Send online update if in online game
-        if (typeof networkManager !== 'undefined' && networkManager.connected) {
+        if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
             networkManager.sendPlayerInput({ action: 'drop' });
         }
     }
 
-    hardDrop() {
+    hardDrop(options = {}) {
+        const { propagate = true } = options;
         let maxDrops = BOARD_HEIGHT; // Safety limit
         let landedOnLocked = false;
 
@@ -772,7 +787,7 @@ class Player {
         }
         this.dropCounter = 0;
         // Send online update if in online game
-        if (typeof networkManager !== 'undefined' && networkManager.connected) {
+        if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
             networkManager.sendPlayerInput({ action: 'hardDrop' });
         }
     }
@@ -2401,23 +2416,35 @@ class UIManager {
         container.innerHTML = '';
         
         if (rooms.length === 0) {
-            container.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">
-                <strong>${t('noRoomsAvailable')}</strong><br>
-                ${t('createRoomPrompt')}
-            </p>`;
+            const emptyState = document.createElement('div');
+            emptyState.className = 'rooms-empty';
+            emptyState.setAttribute('role', 'listitem');
+            emptyState.innerHTML = `
+                <strong data-i18n="noRoomsAvailable">${t('noRoomsAvailable')}</strong>
+                <span data-i18n="createRoomPrompt">${t('createRoomPrompt')}</span>
+            `;
+            container.appendChild(emptyState);
         } else {
             rooms.forEach(room => {
-                const roomDiv = document.createElement('div');
-                roomDiv.className = 'room-item';
-                roomDiv.innerHTML = `
+                const roomButton = document.createElement('button');
+                roomButton.type = 'button';
+                roomButton.className = 'room-item';
+                roomButton.setAttribute('role', 'listitem');
+                roomButton.innerHTML = `
                     <div class="room-info">
                         <h4>${room.name}</h4>
-                        <p>${room.players}/${room.maxPlayers} players</p>
+                        <p>
+                            <span class="room-count">${room.players}/${room.maxPlayers}</span>
+                            <span class="room-label" data-i18n="playersLabel">${t('playersLabel')}</span>
+                        </p>
                     </div>
-                    <button class="btn btn-primary btn-small">Join</button>
+                    <div class="room-meta">
+                        <span class="room-status-label" data-i18n="${room.gameStarted ? 'roomInGame' : 'roomOpen'}">${t(room.gameStarted ? 'roomInGame' : 'roomOpen')}</span>
+                        <span aria-hidden="true" class="room-meta-icon">→</span>
+                    </div>
                 `;
-                roomDiv.querySelector('.btn').addEventListener('click', () => this.joinRoom(room.id));
-                container.appendChild(roomDiv);
+                roomButton.addEventListener('click', () => this.joinRoom(room.id));
+                container.appendChild(roomButton);
             });
         }
     }
@@ -2441,25 +2468,19 @@ class UIManager {
         networkManager.toggleReady();
         const btn = document.getElementById('ready-btn');
         if (btn) {
-            if (btn.textContent.includes('Ready')) {
-                btn.textContent = '⏳ Waiting...';
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-secondary');
-            } else {
-                btn.textContent = '✓ Ready';
-                btn.classList.remove('btn-secondary');
-                btn.classList.add('btn-primary');
-            }
+            btn.disabled = true;
+            btn.classList.add('btn-pending');
+            btn.setAttribute('aria-busy', 'true');
         }
     }
 
     showRoomView(room) {
         const roomView = document.getElementById('room-view');
         const roomsSection = document.querySelector('.rooms-section');
-        
+
         if (roomView && roomsSection) {
-            roomsSection.style.display = 'none';
-            roomView.style.display = 'block';
+            roomsSection.setAttribute('hidden', '');
+            roomView.removeAttribute('hidden');
             this.updateRoomView(room);
         }
     }
@@ -2467,10 +2488,10 @@ class UIManager {
     hideRoomView() {
         const roomView = document.getElementById('room-view');
         const roomsSection = document.querySelector('.rooms-section');
-        
+
         if (roomView && roomsSection) {
-            roomView.style.display = 'none';
-            roomsSection.style.display = 'block';
+            roomView.setAttribute('hidden', '');
+            roomsSection.removeAttribute('hidden');
         }
     }
 
@@ -2479,7 +2500,9 @@ class UIManager {
         const playersListEl = document.getElementById('room-players-list');
         const colorOptionsEl = document.getElementById('color-options');
         const statusEl = document.getElementById('room-status');
-        
+        const readyBtn = document.getElementById('ready-btn');
+        const socketId = networkManager.socket ? networkManager.socket.id : null;
+
         if (roomNameEl) {
             roomNameEl.textContent = room.name;
         }
@@ -2503,27 +2526,33 @@ class UIManager {
         if (colorOptionsEl) {
             colorOptionsEl.innerHTML = '';
             const COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
-            const myPlayer = room.players.find(p => p.id === networkManager.socket.id);
-            
+            const myPlayer = socketId ? room.players.find(p => p.id === socketId) : null;
+
             COLORS.forEach(color => {
-                const colorDiv = document.createElement('div');
-                colorDiv.className = 'color-option';
-                colorDiv.style.background = color;
-                
+                const colorButton = document.createElement('button');
+                colorButton.type = 'button';
+                colorButton.className = 'color-option';
+                colorButton.style.background = color;
+                colorButton.setAttribute('aria-label', `${t('yourColor')} ${color}`);
+                colorButton.setAttribute('role', 'listitem');
+
                 const isUsed = room.players.some(p => p.color === color);
                 const isMyColor = myPlayer && myPlayer.color === color;
-                
+                colorButton.setAttribute('aria-pressed', isMyColor ? 'true' : 'false');
+
                 if (isMyColor) {
-                    colorDiv.classList.add('selected');
+                    colorButton.classList.add('selected');
                 } else if (isUsed) {
-                    colorDiv.classList.add('disabled');
+                    colorButton.classList.add('disabled');
+                    colorButton.disabled = true;
+                    colorButton.setAttribute('aria-disabled', 'true');
                 } else {
-                    colorDiv.addEventListener('click', () => {
+                    colorButton.addEventListener('click', () => {
                         networkManager.changeColor(color);
                     });
                 }
-                
-                colorOptionsEl.appendChild(colorDiv);
+
+                colorOptionsEl.appendChild(colorButton);
             });
         }
 
@@ -2531,14 +2560,31 @@ class UIManager {
         if (statusEl) {
             const readyCount = room.players.filter(p => p.ready).length;
             if (readyCount === room.players.length && room.players.length > 0) {
-                statusEl.textContent = 'Starting game...';
+                statusEl.setAttribute('data-i18n', 'startingGame');
+                statusEl.textContent = t('startingGame');
                 statusEl.style.background = 'rgba(46, 213, 115, 0.15)';
                 statusEl.style.borderColor = 'rgba(46, 213, 115, 0.3)';
             } else {
-                statusEl.textContent = `${readyCount}/${room.players.length} players ready`;
+                statusEl.removeAttribute('data-i18n');
+                statusEl.innerHTML = `<span class="ready-count">${readyCount}/${room.players.length}</span> <span data-i18n="playersReadyLabel">${t('playersReadyLabel')}</span>`;
                 statusEl.style.background = 'rgba(255, 219, 88, 0.15)';
                 statusEl.style.borderColor = 'rgba(255, 219, 88, 0.3)';
             }
+        }
+
+        if (readyBtn) {
+            const myPlayer = socketId ? room.players.find(p => p.id === socketId) : null;
+            const isReady = !!myPlayer?.ready;
+
+            readyBtn.disabled = false;
+            readyBtn.classList.remove('btn-pending');
+            readyBtn.removeAttribute('aria-busy');
+            readyBtn.classList.toggle('btn-secondary', isReady);
+            readyBtn.classList.toggle('btn-primary', !isReady);
+            readyBtn.setAttribute('aria-pressed', isReady ? 'true' : 'false');
+            readyBtn.innerHTML = isReady
+                ? '✔ <span data-i18n="ready">Ready</span>'
+                : '✓ <span data-i18n="ready">Ready</span>';
         }
     }
 
@@ -2584,13 +2630,13 @@ class UIManager {
                 console.warn('Invalid player input data received:', data);
                 return;
             }
-            
+
             // Validate action type
             if (!VALID_ACTIONS.includes(data.action)) {
                 console.warn('Invalid action type received:', data.action);
                 return;
             }
-            
+
             const playerIndex = this.networkPlayers[data.playerId];
             if (playerIndex !== undefined && playerIndex !== this.localPlayerIndex) {
                 const player = gameState.players[playerIndex];
@@ -2600,19 +2646,19 @@ class UIManager {
                         case 'move':
                             // Validate direction is -1 or 1
                             if (typeof data.direction === 'number' && (data.direction === -1 || data.direction === 1)) {
-                                player.move(data.direction);
+                                player.move(data.direction, { propagate: false });
                             } else {
                                 console.warn('Invalid move direction:', data.direction);
                             }
                             break;
                         case 'rotate':
-                            player.rotate();
+                            player.rotate({ propagate: false });
                             break;
                         case 'drop':
-                            player.drop();
+                            player.drop({ propagate: false });
                             break;
                         case 'hardDrop':
-                            player.hardDrop();
+                            player.hardDrop({ propagate: false });
                             break;
                     }
                 }
