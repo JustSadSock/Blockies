@@ -74,7 +74,13 @@ const TRANSLATIONS = {
         connectionFailed: "Connection failed",
         serverUnavailable: "Server is currently unavailable. Please try again later.",
         socketIoNotAvailable: "Unable to connect to multiplayer server.",
-        
+        connectionLost: "Connection lost",
+        attemptingReconnect: "Trying to reconnect...",
+        reconnectFailed: "Unable to reconnect",
+        reconnectFailedMsg: "We couldn't return to the room in time. Head back to the lobby or try again.",
+        connectionRestored: "Connection restored",
+        resumingPlay: "Resuming session...",
+
         // Touch controls
         touchControlsReady: "Touch controls ready",
         startGameForTouch: "Start a game to use touch controls",
@@ -91,11 +97,43 @@ const TRANSLATIONS = {
         enterYourName: "Enter your name...",
         availableRooms: "Available Rooms",
         createNewRoom: "Create New Room",
+        roomNameLabel: "Room name",
+        createRoomPlaceholder: "Name your room...",
+        createRoomAction: "Create",
+        createRoomHelp: "Pick a name and invite friends to join.",
+        roomVisibility: "Room visibility",
+        roomVisibilityHelp: "Choose whether your room is public or private and set an access code.",
+        publicRoom: "Public",
+        privateRoom: "Private",
+        publicRoomHint: "Listed in the lobby for everyone.",
+        privateRoomHint: "Only players with the code can join.",
+        accessCodeLabel: "Access code",
+        accessCodePlaceholder: "4-8 letters or numbers",
+        accessCodeRequired: "Enter a code for private rooms.",
+        confirmCreateRoom: "Create room",
+        enterRoomCodeTitle: "Enter access code",
+        enterRoomCodeHelp: "This room is private. Enter the code to join.",
+        roomCodePlaceholder: "Enter code...",
+        roomCodeRequired: "Enter the room code.",
+        invalidAccessCode: "Incorrect access code.",
+        roomNameRequired: "Enter a room name first.",
         playersInRoom: "Players in Room",
         yourColor: "Your Color",
         ready: "Ready",
+        notReady: "Not Ready",
         waitingForPlayers: "Waiting for players...",
+        playersReadyLabel: "players ready",
+        startingGame: "Starting game...",
+        playersLabel: "players",
+        roomOpen: "Open",
+        roomInGame: "In game",
+        roomCodeLabel: "Code",
         leaveRoom: "Leave Room",
+        hostLabel: "Host",
+        kickPlayer: "Remove",
+        youWereKicked: "Removed from room",
+        youWereKickedMsg: "The host removed you from the room.",
+        joinRoomAction: "Join room",
         backToMenu: "Back to Menu",
         
         // Co-op
@@ -187,7 +225,13 @@ const TRANSLATIONS = {
         connectionFailed: "Ошибка подключения",
         serverUnavailable: "Сервер временно недоступен. Попробуйте позже.",
         socketIoNotAvailable: "Не удалось подключиться к серверу мультиплеера.",
-        
+        connectionLost: "Соединение потеряно",
+        attemptingReconnect: "Пытаемся переподключиться...",
+        reconnectFailed: "Не удалось переподключиться",
+        reconnectFailedMsg: "Не успели вернуться в комнату. Вернитесь в лобби или попробуйте ещё раз.",
+        connectionRestored: "Связь восстановлена",
+        resumingPlay: "Возобновляем игру...",
+
         // Touch controls
         touchControlsReady: "Сенсорное управление готово",
         startGameForTouch: "Начните игру для использования сенсорного управления",
@@ -204,11 +248,43 @@ const TRANSLATIONS = {
         enterYourName: "Введите ваше имя...",
         availableRooms: "Доступные комнаты",
         createNewRoom: "Создать новую комнату",
+        roomNameLabel: "Название комнаты",
+        createRoomPlaceholder: "Введите название комнаты...",
+        createRoomAction: "Создать",
+        createRoomHelp: "Придумайте название и пригласите друзей.",
+        roomVisibility: "Параметры комнаты",
+        roomVisibilityHelp: "Выберите, будет ли комната публичной или приватной, и задайте код доступа.",
+        publicRoom: "Публичная",
+        privateRoom: "Приватная",
+        publicRoomHint: "Комната отображается в списке для всех.",
+        privateRoomHint: "Войти можно только по коду.",
+        accessCodeLabel: "Код доступа",
+        accessCodePlaceholder: "4-8 символов",
+        accessCodeRequired: "Введите код для приватной комнаты.",
+        confirmCreateRoom: "Создать комнату",
+        enterRoomCodeTitle: "Введите код доступа",
+        enterRoomCodeHelp: "Комната приватная. Введите код, чтобы присоединиться.",
+        roomCodePlaceholder: "Введите код...",
+        roomCodeRequired: "Введите код комнаты.",
+        invalidAccessCode: "Неверный код доступа.",
+        roomNameRequired: "Введите название комнаты.",
         playersInRoom: "Игроки в комнате",
         yourColor: "Ваш цвет",
         ready: "Готов",
+        notReady: "Не готов",
         waitingForPlayers: "Ожидание игроков...",
+        playersReadyLabel: "игроков готовы",
+        startingGame: "Запуск игры...",
+        playersLabel: "игроков",
+        roomOpen: "Свободна",
+        roomInGame: "В игре",
+        roomCodeLabel: "Код",
         leaveRoom: "Покинуть комнату",
+        hostLabel: "Хост",
+        kickPlayer: "Удалить",
+        youWereKicked: "Вас удалили из комнаты",
+        youWereKickedMsg: "Хост удалил вас из комнаты.",
+        joinRoomAction: "Войти в комнату",
         backToMenu: "Назад в меню",
         
         // Co-op
@@ -370,6 +446,80 @@ const SHAPES = {
     L: [[0, 0, 1], [1, 1, 1]]
 };
 
+const PIECE_ORDER = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+function cloneShape(shape) {
+    return shape.map(row => [...row]);
+}
+
+function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function() {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function shuffleWithRng(items, rng) {
+    const list = [...items];
+    for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+}
+
+function createPieceGenerator(seed) {
+    const rng = mulberry32(seed >>> 0);
+    let bag = [];
+    return () => {
+        if (!bag.length) {
+            bag = shuffleWithRng(PIECE_ORDER, rng);
+        }
+        return bag.pop();
+    };
+}
+
+function initializePieceSystem(seed, initialSequence = null) {
+    const normalizedSeed = Number.isFinite(seed) ? (seed >>> 0) : Math.floor(Math.random() * 0xffffffff);
+    gameState.pieceSeed = normalizedSeed;
+    gameState.pieceGenerator = createPieceGenerator(normalizedSeed);
+    if (Array.isArray(initialSequence) && initialSequence.length) {
+        gameState.pieceQueue = initialSequence.map(key => (PIECE_ORDER.includes(key) ? key : 'I'));
+    } else {
+        gameState.pieceQueue = [];
+    }
+    ensurePieceQueue();
+    return normalizedSeed;
+}
+
+function ensurePieceQueue(minSize = 6) {
+    if (!gameState.pieceGenerator) return;
+    if (gameState.isOnlineMode && !gameState.isOnlineHost) {
+        return;
+    }
+    while (gameState.pieceQueue.length < minSize) {
+        const nextKey = gameState.pieceGenerator();
+        gameState.pieceQueue.push(nextKey);
+    }
+}
+
+function takeNextPieceMatrix() {
+    if (!gameState.pieceGenerator) {
+        initializePieceSystem();
+    }
+
+    if (!gameState.pieceQueue.length) {
+        ensurePieceQueue();
+    }
+
+    const shapeKey = gameState.pieceQueue.shift();
+    ensurePieceQueue();
+    return cloneShape(SHAPES[shapeKey]);
+}
+
 // Default colors for players - Retro-futurism palette
 const DEFAULT_COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
 
@@ -449,7 +599,17 @@ let gameState = {
     boardWidth: BASE_BOARD_WIDTH,
     sharedStats: { ...TEAM_SCORE_TEMPLATE },
     sharedStatsDirty: false,
+    stateDirty: false,
+    lastBroadcastTime: 0,
+    stateSequence: 0,
+    lastAuthoritativeSequence: 0,
+    isOnlineMode: false,
+    isOnlineHost: false,
+    lastInputSequenceByPlayer: {},
     inputStates: new Map(),
+    pieceGenerator: null,
+    pieceQueue: [],
+    pieceSeed: 0,
     settings: {
         colors: [...DEFAULT_COLORS],
         keys: JSON.parse(JSON.stringify(DEFAULT_KEYS))
@@ -503,6 +663,10 @@ function createGamepadButtonState() {
 function resetSharedStats() {
     gameState.sharedStats = { ...TEAM_SCORE_TEMPLATE };
     gameState.sharedStatsDirty = true;
+}
+
+function markStateDirty() {
+    gameState.stateDirty = true;
 }
 
 function formatKeyLabel(code) {
@@ -591,6 +755,7 @@ class Player {
         this.currentPiece = null;
         this.nextPiece = null;
         this.position = { x: 0, y: 0 };
+        this.renderPosition = { x: 0, y: 0 };
         this.gameOver = false;
         this.dropCounter = 0;
         this.dropInterval = 1000;
@@ -599,19 +764,15 @@ class Player {
     }
 
     init() {
-        this.nextPiece = this.randomPiece();
+        this.nextPiece = takeNextPieceMatrix();
         this.spawnPiece();
-    }
-
-    randomPiece() {
-        const shapes = Object.keys(SHAPES);
-        const shape = shapes[Math.floor(Math.random() * shapes.length)];
-        return SHAPES[shape];
+        this.renderPosition.x = this.position.x;
+        this.renderPosition.y = this.position.y;
     }
 
     spawnPiece() {
         this.currentPiece = this.nextPiece;
-        this.nextPiece = this.randomPiece();
+        this.nextPiece = takeNextPieceMatrix();
         const pieceWidth = this.currentPiece[0].length;
         const boardWidth = getBoardWidth();
         const preferredX = Math.min(
@@ -648,6 +809,8 @@ class Player {
         }
 
         this.position = spawnPosition || { x: preferredX, y: 0 };
+        this.renderPosition.x = this.position.x;
+        this.renderPosition.y = this.position.y;
 
         if (!spawnPosition && this.checkCollision().collides) {
             this.gameOver = true;
@@ -655,6 +818,7 @@ class Player {
         }
 
         this.dropCounter = 0;
+        markStateDirty();
     }
 
     checkCollision(piece = this.currentPiece, pos = this.position) {
@@ -696,20 +860,28 @@ class Player {
         return result;
     }
 
-    move(dir) {
+    move(dir, options = {}) {
+        const { propagate = true } = options;
+
         this.position.x += dir;
         if (this.checkCollision().collides) {
             this.position.x -= dir;
         } else {
             soundManager.move();
+            this.renderPosition.x = this.position.x;
+            markStateDirty();
             // Send online update if in online game
-            if (typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+                if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                    window.uiManager.registerLocalOnlineInput('move', { direction: dir });
+                }
                 networkManager.sendPlayerInput({ action: 'move', direction: dir });
             }
         }
     }
 
-    rotate() {
+    rotate(options = {}) {
+        const { propagate = true } = options;
         const rotated = this.currentPiece[0].map((_, i) =>
             this.currentPiece.map(row => row[i]).reverse()
         );
@@ -717,33 +889,44 @@ class Player {
         if (!this.checkCollision(rotated).collides) {
             this.currentPiece = rotated;
             soundManager.rotate();
+            markStateDirty();
             // Send online update if in online game
-            if (typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+                if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                    window.uiManager.registerLocalOnlineInput('rotate');
+                }
                 networkManager.sendPlayerInput({ action: 'rotate' });
             }
         }
     }
 
-    drop() {
+    drop(options = {}) {
+        const { propagate = true, predicted = false } = options;
         this.position.y++;
         const collision = this.checkCollision();
         if (collision.collides) {
             this.position.y--;
-            if (collision.withLocked) {
+            if (collision.withLocked && !predicted) {
                 this.merge();
                 soundManager.drop();
                 this.clearLines();
                 this.spawnPiece();
             }
         }
+        markStateDirty();
         this.dropCounter = 0;
+        this.renderPosition.y = this.position.y;
         // Send online update if in online game
-        if (typeof networkManager !== 'undefined' && networkManager.connected) {
+        if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                window.uiManager.registerLocalOnlineInput('drop');
+            }
             networkManager.sendPlayerInput({ action: 'drop' });
         }
     }
 
-    hardDrop() {
+    hardDrop(options = {}) {
+        const { propagate = true, predicted = false } = options;
         let maxDrops = BOARD_HEIGHT; // Safety limit
         let landedOnLocked = false;
 
@@ -764,15 +947,20 @@ class Player {
             break;
         }
 
-        if (landedOnLocked) {
+        if (landedOnLocked && !predicted) {
             this.merge();
             soundManager.drop();
             this.clearLines();
             this.spawnPiece();
         }
         this.dropCounter = 0;
+        this.renderPosition.y = this.position.y;
+        markStateDirty();
         // Send online update if in online game
-        if (typeof networkManager !== 'undefined' && networkManager.connected) {
+        if (propagate && typeof networkManager !== 'undefined' && networkManager.connected) {
+            if (typeof window !== 'undefined' && window.uiManager && typeof window.uiManager.registerLocalOnlineInput === 'function') {
+                window.uiManager.registerLocalOnlineInput('hardDrop');
+            }
             networkManager.sendPlayerInput({ action: 'hardDrop' });
         }
     }
@@ -789,6 +977,7 @@ class Player {
                 }
             }
         }
+        markStateDirty();
     }
 
     clearLines() {
@@ -853,6 +1042,7 @@ class Player {
         });
 
         gameState.sharedStatsDirty = true;
+        markStateDirty();
     }
 
     update(deltaTime) {
@@ -915,6 +1105,8 @@ class UIManager {
         this.touchControls = document.getElementById('touch-controls');
         this.touchStatus = document.getElementById('touch-status');
         this.touchPlayerIndex = 0;
+        this.touchPreferred = this.detectTouchPreference();
+        this.coarsePointerQuery = null;
         this.teamStats = document.getElementById('team-stats');
         this.scoreCard = document.getElementById('team-score-card');
         this.comboIndicator = document.getElementById('combo-indicator');
@@ -923,7 +1115,13 @@ class UIManager {
         this.clearFeed = document.getElementById('clear-feed');
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
-        
+        this.roomDialogOverlay = null;
+        this.roomDialogKeyHandler = null;
+        this.reconnectBanner = null;
+        this.pendingReconnectHide = null;
+        this.awaitingReconnect = false;
+        this.resumeOnReconnect = false;
+
         // Set combo help tooltip
         if (this.comboIndicator) {
             this.updateComboTooltip();
@@ -932,17 +1130,170 @@ class UIManager {
         this.isOnlineMode = false; // Flag for online multiplayer mode
         this.networkPlayers = {}; // Map of network player IDs to local indices
         this.localPlayerIndex = -1; // Local player index in online mode
+        this.isOnlineHost = false;
+        this.localPlayerSessionId = null;
+        this.pendingLocalInputs = [];
+        this.lastAckedSequence = 0;
+        this.stateBroadcastInterval = 40; // ms between authoritative state pushes
+        this.stateBroadcastSequence = 0;
+        this.lastStateSentAt = 0;
+        this.lastRemoteStateAt = 0;
 
-        this.moveRepeatInterval = 90;
+        this.moveRepeatInterval = 135;
         this.softDropInitialDelay = 0;
         this.softDropRepeatInterval = 55;
+
+        if (window.matchMedia) {
+            try {
+                const query = window.matchMedia('(pointer: coarse)');
+                const handleChange = (event) => {
+                    this.touchPreferred = this.detectTouchPreference(event.matches);
+                    this.updateTouchControlsVisibility(true);
+                };
+                if (typeof query.addEventListener === 'function') {
+                    query.addEventListener('change', handleChange);
+                } else if (typeof query.addListener === 'function') {
+                    query.addListener(handleChange);
+                }
+                this.coarsePointerQuery = query;
+            } catch (error) {
+                console.warn('Pointer media query not supported', error);
+            }
+        }
 
         this.setupEventListeners();
         this.initTouchControls();
         this.initGamepads();
+        this.updateTouchControlsVisibility();
         window.addEventListener('resize', () => this.handleResize());
     }
-    
+
+    detectTouchPreference(explicitCoarseMatch) {
+        const coarseMatches = typeof explicitCoarseMatch === 'boolean'
+            ? explicitCoarseMatch
+            : (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false);
+        const hasTouchPoints = typeof navigator !== 'undefined'
+            && typeof navigator.maxTouchPoints === 'number'
+            && navigator.maxTouchPoints > 0;
+        const legacyTouch = typeof window !== 'undefined' && 'ontouchstart' in window;
+        return coarseMatches || hasTouchPoints || legacyTouch;
+    }
+
+    shouldShowTouchControls() {
+        return !!this.touchPreferred;
+    }
+
+    updateTouchControlsVisibility(forceRefresh = false) {
+        if (!this.touchControls) return;
+
+        const isGameActive = this.screens.gameScreen?.classList.contains('active');
+        if (isGameActive && this.shouldShowTouchControls()) {
+            if (forceRefresh || !this.touchControls.classList.contains('visible')) {
+                this.touchControls.classList.add('visible');
+                this.refreshTouchStatus();
+            }
+        } else {
+            if (this.touchControls.classList.contains('visible')) {
+                this.touchControls.classList.remove('visible');
+            }
+            if (this.touchStatus) {
+                this.touchStatus.textContent = this.shouldShowTouchControls() ? t('startGameForTouch') : '';
+            }
+        }
+    }
+
+    registerLocalOnlineInput(action, data = {}) {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (this.localPlayerIndex === -1) {
+            return;
+        }
+
+        if (!this.localPlayerSessionId || this.localPlayerSessionId !== networkManager.sessionId) {
+            return;
+        }
+
+        const entry = {
+            action,
+            data: { ...data },
+            sequence: null,
+            timestamp: performance.now ? performance.now() : Date.now()
+        };
+        this.pendingLocalInputs.push(entry);
+
+        if (this.pendingLocalInputs.length > 40) {
+            this.pendingLocalInputs.shift();
+        }
+    }
+
+    handleInputAck(payload = {}) {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (!payload || typeof payload.sequence !== 'number') {
+            return;
+        }
+
+        const pending = this.pendingLocalInputs.find(entry => entry.sequence === null);
+        if (pending) {
+            pending.sequence = payload.sequence;
+        }
+    }
+
+    confirmAuthoritativeAck(sequence) {
+        if (typeof sequence !== 'number') {
+            return;
+        }
+
+        this.lastAckedSequence = Math.max(this.lastAckedSequence || 0, sequence);
+        this.pendingLocalInputs = this.pendingLocalInputs.filter(entry => {
+            if (typeof entry.sequence !== 'number') {
+                return true;
+            }
+            return entry.sequence > this.lastAckedSequence;
+        });
+        if (this.localPlayerSessionId) {
+            gameState.lastInputSequenceByPlayer[this.localPlayerSessionId] = this.lastAckedSequence;
+        }
+    }
+
+    reapplyPendingInputs() {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (this.localPlayerIndex === -1) {
+            return;
+        }
+
+        const player = gameState.players[this.localPlayerIndex];
+        if (!player || player.gameOver) {
+            return;
+        }
+
+        for (const entry of this.pendingLocalInputs) {
+            switch (entry.action) {
+                case 'move':
+                    if (typeof entry.data.direction === 'number') {
+                        player.move(entry.data.direction, { propagate: false });
+                    }
+                    break;
+                case 'rotate':
+                    player.rotate({ propagate: false });
+                    break;
+                case 'drop':
+                    player.drop({ propagate: false });
+                    break;
+                case 'hardDrop':
+                    player.hardDrop({ propagate: false });
+                    break;
+            }
+        }
+    }
+
     // Helper method to check if a player can be controlled locally
     isPlayerControllable(player) {
         if (player.gameOver) return false;
@@ -1071,7 +1422,13 @@ class UIManager {
 
         // Online lobby
         document.getElementById('back-from-online-btn').addEventListener('click', () => this.showScreen('mainMenu'));
-        document.getElementById('create-room-btn').addEventListener('click', () => this.createRoom());
+        const createRoomForm = document.getElementById('create-room-form');
+        if (createRoomForm) {
+            createRoomForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                this.createRoom();
+            });
+        }
         const nicknameInput = document.getElementById('nickname-input');
         if (nicknameInput) {
             // Load saved nickname
@@ -1152,16 +1509,23 @@ class UIManager {
         });
 
         if (this.touchStatus) {
-            this.touchStatus.textContent = t('startGameForTouch');
+            this.touchStatus.textContent = this.shouldShowTouchControls()
+                ? t('startGameForTouch')
+                : '';
         }
     }
 
     refreshTouchStatus() {
         if (!this.touchControls || !this.touchStatus) return;
 
+        if (!this.shouldShowTouchControls() || !this.touchControls.classList.contains('visible')) {
+            this.touchStatus.textContent = this.shouldShowTouchControls() ? t('startGameForTouch') : '';
+            return;
+        }
+
         const activePlayer = this.getTouchPlayer();
         if (activePlayer && !gameState.isGameOver) {
-            this.touchStatus.textContent = currentLanguage === 'ru' 
+            this.touchStatus.textContent = currentLanguage === 'ru'
                 ? `Сенсорное управление: Игрок ${activePlayer.id + 1}`
                 : `Touch controls: Player ${activePlayer.id + 1}`;
         } else if (gameState.players.length && gameState.players.every(player => player.gameOver)) {
@@ -1174,7 +1538,7 @@ class UIManager {
     }
 
     getTouchPlayer() {
-        if (!gameState.players.length) {
+        if (!this.shouldShowTouchControls() || !gameState.players.length) {
             return null;
         }
 
@@ -1193,7 +1557,7 @@ class UIManager {
     }
 
     handleTouchAction(action) {
-        if (gameState.isPaused || gameState.isGameOver) {
+        if (!this.shouldShowTouchControls() || gameState.isPaused || gameState.isGameOver) {
             return;
         }
 
@@ -1281,17 +1645,13 @@ class UIManager {
             }
         }
 
-        if (this.touchControls) {
-            if (screenName === 'gameScreen') {
-                this.touchControls.classList.add('visible');
-                this.refreshTouchStatus();
-            } else {
-                this.touchControls.classList.remove('visible');
-                if (this.touchStatus) {
-                    this.touchStatus.textContent = t('startGameForTouch');
-                }
-            }
+        if (screenName !== 'gameScreen') {
+            this.awaitingReconnect = false;
+            this.resumeOnReconnect = false;
+            this.setReconnectionState('hidden');
         }
+
+        this.updateTouchControlsVisibility(true);
     }
 
     showModal(modalName) {
@@ -1302,7 +1662,7 @@ class UIManager {
         this.modals[modalName].classList.remove('active');
     }
 
-    startGame(numPlayers) {
+    startGame(numPlayers, options = {}) {
         gameState.numPlayers = numPlayers;
         gameState.isPaused = false;
         gameState.isGameOver = false;
@@ -1313,6 +1673,19 @@ class UIManager {
         this.touchPlayerIndex = 0;
         gameState.inputStates = new Map();
         resetSharedStats();
+        gameState.stateDirty = true;
+        gameState.lastBroadcastTime = 0;
+        gameState.stateSequence = 0;
+        gameState.lastAuthoritativeSequence = 0;
+        gameState.isOnlineMode = !!this.isOnlineMode;
+        gameState.isOnlineHost = !!this.isOnlineHost;
+        gameState.lastInputSequenceByPlayer = {};
+        if (this.pendingLocalInputs) {
+            this.pendingLocalInputs = [];
+        }
+        this.lastAckedSequence = 0;
+
+        const seedUsed = initializePieceSystem(options.pieceSeed, options.pieceSequence);
 
         const container = document.getElementById('game-container');
         container.innerHTML = '';
@@ -1335,6 +1708,10 @@ class UIManager {
 
         const boardWrapper = document.createElement('div');
         boardWrapper.id = 'shared-board';
+        boardWrapper.style.setProperty('--board-aspect', `${gameState.boardWidth}/${BOARD_HEIGHT}`);
+        if ('aspectRatio' in boardWrapper.style) {
+            boardWrapper.style.aspectRatio = `${gameState.boardWidth} / ${BOARD_HEIGHT}`;
+        }
 
         const canvas = document.createElement('canvas');
         canvas.id = 'game-canvas';
@@ -1388,6 +1765,8 @@ class UIManager {
         this.refreshTouchStatus();
         this.scheduleBoardScaleUpdate();
         requestAnimationFrame((time) => this.gameLoop(time));
+
+        return seedUsed;
     }
     
     createNextPiecePreview(player, container) {
@@ -1446,21 +1825,41 @@ class UIManager {
             this.pollGamepads();
 
             let touchStatusNeedsUpdate = false;
-            gameState.players.forEach(player => {
-                const wasGameOver = player.gameOver;
 
-                if (!player.gameOver) {
-                    player.update(deltaTime);
-                    this.applyContinuousInputs(player, deltaTime);
-                    this.updatePlayerInfo(player);
-                    this.drawNextPiece(player);
-                }
+            if (!this.isOnlineMode || this.isOnlineHost) {
+                gameState.players.forEach(player => {
+                    const wasGameOver = player.gameOver;
 
-                if (!wasGameOver && player.gameOver) {
-                    touchStatusNeedsUpdate = true;
-                }
-            });
+                    if (!player.gameOver) {
+                        player.update(deltaTime);
+                        this.applyContinuousInputs(player, deltaTime);
+                        this.updatePlayerInfo(player);
+                        this.drawNextPiece(player);
+                    }
 
+                    if (!wasGameOver && player.gameOver) {
+                        touchStatusNeedsUpdate = true;
+                    }
+                });
+            } else {
+                gameState.players.forEach(player => {
+                    const wasGameOver = player.gameOver;
+
+                    if (!player.gameOver) {
+                        if (this.isPlayerControllable(player)) {
+                            this.applyContinuousInputs(player, deltaTime);
+                        }
+                        this.updatePlayerInfo(player);
+                        this.drawNextPiece(player);
+                    }
+
+                    if (!wasGameOver && player.gameOver) {
+                        touchStatusNeedsUpdate = true;
+                    }
+                });
+            }
+
+            this.interpolatePlayerRenderPositions(deltaTime);
             this.drawBoard();
             this.updateTeamStatsIfNeeded();
 
@@ -1469,7 +1868,55 @@ class UIManager {
             }
         }
 
+        if (this.isOnlineMode && this.isOnlineHost) {
+            this.maybeBroadcastState();
+        }
+
         requestAnimationFrame((time) => this.gameLoop(time));
+    }
+
+    interpolatePlayerRenderPositions(deltaTime) {
+        if (!Number.isFinite(deltaTime)) {
+            return;
+        }
+
+        const smoothingBase = this.isOnlineMode ? 90 : 45;
+        const smoothingVertical = this.isOnlineMode ? 120 : 60;
+        const alphaX = Math.min(1, deltaTime / smoothingBase);
+        const alphaY = Math.min(1, deltaTime / smoothingVertical);
+
+        gameState.players.forEach(player => {
+            if (!player) return;
+
+            if (!player.renderPosition) {
+                player.renderPosition = { x: player.position.x, y: player.position.y };
+            }
+
+            if (!player.currentPiece || player.gameOver) {
+                player.renderPosition.x = player.position.x;
+                player.renderPosition.y = player.position.y;
+                return;
+            }
+
+            const targetX = player.position.x;
+            const targetY = player.position.y;
+
+            const diffX = targetX - player.renderPosition.x;
+            if (Math.abs(diffX) < 0.01) {
+                player.renderPosition.x = targetX;
+            } else {
+                player.renderPosition.x += diffX * alphaX;
+            }
+
+            const diffY = targetY - player.renderPosition.y;
+            if (Math.abs(diffY) > 4) {
+                player.renderPosition.y = targetY;
+            } else if (Math.abs(diffY) < 0.01) {
+                player.renderPosition.y = targetY;
+            } else {
+                player.renderPosition.y += diffY * alphaY;
+            }
+        });
     }
 
     drawBoard() {
@@ -1517,16 +1964,19 @@ class UIManager {
         gameState.players.forEach(player => {
             if (!player.currentPiece || player.gameOver) return;
 
+            const baseX = (player.renderPosition ? player.renderPosition.x : player.position.x);
+            const baseY = (player.renderPosition ? player.renderPosition.y : player.position.y);
+
             for (let y = 0; y < player.currentPiece.length; y++) {
                 for (let x = 0; x < player.currentPiece[y].length; x++) {
                     if (player.currentPiece[y][x]) {
-                        const drawX = (player.position.x + x) * BLOCK_SIZE;
-                        const drawY = (player.position.y + y) * BLOCK_SIZE;
-                        
+                        const drawX = (baseX + x) * BLOCK_SIZE;
+                        const drawY = (baseY + y) * BLOCK_SIZE;
+
                         // Glow effect
                         ctx.shadowColor = player.color;
                         ctx.shadowBlur = 8;
-                        
+
                         // Main block with gradient
                         const gradient = ctx.createLinearGradient(
                             drawX, drawY,
@@ -1806,6 +2256,7 @@ class UIManager {
     }
 
     handleResize() {
+        this.updateTouchControlsVisibility();
         if (!this.screens.gameScreen.classList.contains('active')) {
             return;
         }
@@ -1866,8 +2317,13 @@ class UIManager {
         let gapSegments = 0;
 
         if (this.teamStats && this.teamStats.classList.contains('visible')) {
-            usedHeight += this.teamStats.getBoundingClientRect().height;
-            gapSegments += 1;
+            const teamStatsStyles = window.getComputedStyle(this.teamStats);
+            const parentStyles = this.teamStats.parentElement ? window.getComputedStyle(this.teamStats.parentElement) : null;
+            const isOverlay = teamStatsStyles.position === 'absolute' || teamStatsStyles.position === 'fixed' || parentStyles?.position === 'absolute' || parentStyles?.position === 'fixed';
+            if (!isOverlay) {
+                usedHeight += this.teamStats.getBoundingClientRect().height;
+                gapSegments += 1;
+            }
         }
 
         if (this.gameControls) {
@@ -1898,10 +2354,17 @@ class UIManager {
         const displayHeight = Math.max(1, Math.floor(boardHeight * scale));
 
         boardWrapper.style.setProperty('--board-max-width', `${displayWidth}px`);
-        canvas.style.width = `${displayWidth}px`;
-        canvas.style.height = `${displayHeight}px`;
-        canvas.style.maxWidth = `${boardWidth}px`;
-        canvas.style.maxHeight = `${boardHeight}px`;
+        boardWrapper.style.maxWidth = `${boardWidth}px`;
+        boardWrapper.style.maxHeight = `${boardHeight}px`;
+        if (!('aspectRatio' in boardWrapper.style)) {
+            boardWrapper.style.height = `${displayHeight}px`;
+        } else {
+            boardWrapper.style.removeProperty('height');
+        }
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        canvas.style.maxWidth = '100%';
+        canvas.style.maxHeight = '100%';
     }
 
     getActionForCode(player, code) {
@@ -2103,17 +2566,34 @@ class UIManager {
         }
     }
 
+    setPauseState(shouldPause, options = {}) {
+        if (gameState.isGameOver) return;
+
+        const target = !!shouldPause;
+        const silent = options && options.silent;
+
+        if (gameState.isPaused === target) {
+            return;
+        }
+
+        gameState.isPaused = target;
+
+        if (target) {
+            if (!silent) {
+                this.showModal('pause');
+            }
+        } else {
+            if (!silent) {
+                this.hideModal('pause');
+            }
+            gameState.lastTime = performance.now ? performance.now() : Date.now();
+        }
+    }
+
     togglePause() {
         if (gameState.isGameOver) return;
 
-        gameState.isPaused = !gameState.isPaused;
-        
-        if (gameState.isPaused) {
-            this.showModal('pause');
-        } else {
-            this.hideModal('pause');
-            gameState.lastTime = performance.now();
-        }
+        this.setPauseState(!gameState.isPaused);
     }
 
     restart() {
@@ -2130,14 +2610,27 @@ class UIManager {
         gameState.players = [];
         gameState.inputStates = new Map();
         resetSharedStats();
-        
+        gameState.pieceGenerator = null;
+        gameState.pieceQueue = [];
+        gameState.pieceSeed = 0;
+        gameState.lastInputSequenceByPlayer = {};
+
         // Reset online mode flags
         this.isOnlineMode = false;
+        this.isOnlineHost = false;
         this.networkPlayers = {};
         this.localPlayerIndex = -1;
-        
+        this.pendingLocalInputs = [];
+        this.lastAckedSequence = 0;
+        this.localPlayerSessionId = networkManager.sessionId || null;
+        gameState.isOnlineMode = false;
+        gameState.stateDirty = false;
+        gameState.lastAuthoritativeSequence = 0;
+        gameState.isOnlineHost = false;
+
         this.showScreen('mainMenu');
         this.refreshTouchStatus();
+        this.updateTouchControlsVisibility();
 
         const teamStats = document.getElementById('team-stats');
         if (teamStats) {
@@ -2319,12 +2812,14 @@ class UIManager {
 
     showOnlineLobby() {
         this.showScreen('onlineLobby');
+        this.hideRoomView();
         this.updateConnectionStatus('connecting');
         
         // Setup network callbacks
         networkManager.on('connect', () => {
             this.updateConnectionStatus('connected');
-            
+            this.setReconnectionState('hidden');
+
             // Send nickname if available
             const nicknameInput = document.getElementById('nickname-input');
             if (nicknameInput && nicknameInput.value.trim()) {
@@ -2335,6 +2830,34 @@ class UIManager {
         networkManager.on('disconnect', () => {
             this.updateConnectionStatus('disconnected');
             this.showRoomsList([]);
+
+            const expectsReconnect = !!(networkManager.resumeIntent);
+            const inGameScreen = this.screens.gameScreen.classList.contains('active') && gameState.players.length;
+
+            if (expectsReconnect && inGameScreen) {
+                this.resumeOnReconnect = !gameState.isPaused;
+                if (!gameState.isPaused) {
+                    this.setPauseState(true, { silent: true });
+                }
+                this.awaitingReconnect = true;
+            } else {
+                this.awaitingReconnect = false;
+                this.resumeOnReconnect = false;
+            }
+
+            if (!expectsReconnect) {
+                this.setReconnectionState('hidden');
+            }
+        });
+
+        networkManager.on('sessionConfirmed', (data) => {
+            if (data && data.name) {
+                const nicknameInput = document.getElementById('nickname-input');
+                if (nicknameInput && !nicknameInput.value.trim()) {
+                    nicknameInput.value = data.name;
+                }
+            }
+            this.localPlayerSessionId = networkManager.sessionId || this.localPlayerSessionId;
         });
 
         networkManager.on('roomsList', (rooms) => {
@@ -2361,6 +2884,18 @@ class UIManager {
             this.startOnlineGame(data);
         });
 
+        networkManager.on('gameState', (data) => {
+            this.receiveAuthoritativeState(data);
+        });
+
+        networkManager.on('hostChanged', (payload) => {
+            this.handleHostChanged(payload);
+        });
+
+        networkManager.on('inputAck', (payload) => {
+            this.handleInputAck(payload);
+        });
+
         networkManager.on('error', (message) => {
             // Provide user-friendly error messages
             let userMessage = message;
@@ -2368,8 +2903,40 @@ class UIManager {
                 userMessage = t('socketIoNotAvailable');
             } else if (message.includes('Connection failed') || message.includes('failed')) {
                 userMessage = t('serverUnavailable');
+            } else if (message.includes('Invalid access code')) {
+                userMessage = t('invalidAccessCode');
+            } else if (message.includes('Access code required')) {
+                userMessage = t('accessCodeRequired');
             }
             this.showStyledMessage(t('networkError'), userMessage, 'error');
+        });
+
+        networkManager.on('kicked', () => {
+            this.showStyledMessage(t('youWereKicked'), t('youWereKickedMsg'), 'warning');
+            this.hideRoomView();
+        });
+
+        networkManager.on('reconnecting', (info = {}) => {
+            const attempt = typeof info.attempt === 'number' ? info.attempt : 1;
+            const maxAttempts = typeof info.maxAttempts === 'number'
+                ? info.maxAttempts
+                : (networkManager.getMaxReconnectAttempts() || null);
+            this.setReconnectionState('retry', {
+                attempt,
+                maxAttempts: maxAttempts || '∞'
+            });
+        });
+
+        networkManager.on('reconnected', () => {
+            if (!this.awaitingReconnect) {
+                this.setReconnectionState('restored');
+            }
+        });
+
+        networkManager.on('reconnectFailed', () => {
+            this.awaitingReconnect = false;
+            this.resumeOnReconnect = false;
+            this.setReconnectionState('failed');
         });
 
         // Connect to server
@@ -2401,36 +2968,345 @@ class UIManager {
         container.innerHTML = '';
         
         if (rooms.length === 0) {
-            container.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">
-                <strong>${t('noRoomsAvailable')}</strong><br>
-                ${t('createRoomPrompt')}
-            </p>`;
+            const emptyState = document.createElement('div');
+            emptyState.className = 'rooms-empty';
+            emptyState.setAttribute('role', 'listitem');
+            emptyState.innerHTML = `
+                <strong data-i18n="noRoomsAvailable">${t('noRoomsAvailable')}</strong>
+                <span data-i18n="createRoomPrompt">${t('createRoomPrompt')}</span>
+            `;
+            container.appendChild(emptyState);
         } else {
             rooms.forEach(room => {
-                const roomDiv = document.createElement('div');
-                roomDiv.className = 'room-item';
-                roomDiv.innerHTML = `
+                const roomButton = document.createElement('button');
+                roomButton.type = 'button';
+                roomButton.className = 'room-item';
+                roomButton.setAttribute('role', 'listitem');
+                const statusKey = room.gameStarted ? 'roomInGame' : 'roomOpen';
+                const statusClass = room.gameStarted ? 'room-status-label in-game' : 'room-status-label';
+                const privacyClass = room.isPrivate ? 'room-privacy-tag private' : 'room-privacy-tag';
+                const privacyKey = room.isPrivate ? 'privateRoom' : 'publicRoom';
+                const icon = room.isPrivate ? '🔒' : '→';
+
+                roomButton.innerHTML = `
                     <div class="room-info">
                         <h4>${room.name}</h4>
-                        <p>${room.players}/${room.maxPlayers} players</p>
+                        <p>
+                            <span class="room-count">${room.players}/${room.maxPlayers}</span>
+                            <span class="room-label" data-i18n="playersLabel">${t('playersLabel')}</span>
+                        </p>
                     </div>
-                    <button class="btn btn-primary btn-small">Join</button>
+                    <div class="room-meta">
+                        <span class="${privacyClass}" data-i18n="${privacyKey}">${t(privacyKey)}</span>
+                        <span class="${statusClass}" data-i18n="${statusKey}">${t(statusKey)}</span>
+                        <span aria-hidden="true" class="room-meta-icon">${icon}</span>
+                    </div>
                 `;
-                roomDiv.querySelector('.btn').addEventListener('click', () => this.joinRoom(room.id));
-                container.appendChild(roomDiv);
+
+                roomButton.addEventListener('click', () => {
+                    if (room.isPrivate) {
+                        this.promptForRoomCode(room);
+                    } else {
+                        this.joinRoom(room.id);
+                    }
+                });
+
+                container.appendChild(roomButton);
             });
         }
     }
 
     createRoom() {
-        const roomName = prompt('Enter room name:', 'My Room');
-        if (roomName) {
-            networkManager.createRoom(roomName);
+        const input = document.getElementById('create-room-name');
+        if (!input) {
+            return;
         }
+
+        const rawName = input.value.trim();
+        if (!rawName) {
+            input.focus();
+            input.classList.add('input-error');
+            setTimeout(() => input.classList.remove('input-error'), 300);
+            this.showStyledMessage(t('roomNameLabel'), t('roomNameRequired'), 'warning');
+            return;
+        }
+
+        if (!networkManager.connected) {
+            this.showStyledMessage(t('networkError'), t('connectionFailed'), 'error');
+            return;
+        }
+
+        this.openRoomPrivacyDialog(rawName, () => {
+            input.value = '';
+        });
     }
 
-    joinRoom(roomId) {
-        networkManager.joinRoom(roomId);
+    joinRoom(roomId, accessCode = null) {
+        networkManager.joinRoom(roomId, accessCode);
+    }
+
+    openRoomPrivacyDialog(roomName, onSuccess) {
+        this.showRoomDialog({
+            title: t('roomVisibility'),
+            description: t('roomVisibilityHelp'),
+            confirmLabel: t('confirmCreateRoom'),
+            build: (body) => {
+                const visibilityField = document.createElement('div');
+                visibilityField.className = 'dialog-field';
+
+                const visibilityLabel = document.createElement('label');
+                visibilityLabel.textContent = t('roomVisibility');
+                visibilityField.appendChild(visibilityLabel);
+
+                const select = document.createElement('select');
+                const publicOption = document.createElement('option');
+                publicOption.value = 'public';
+                publicOption.textContent = t('publicRoom');
+                select.appendChild(publicOption);
+
+                const privateOption = document.createElement('option');
+                privateOption.value = 'private';
+                privateOption.textContent = t('privateRoom');
+                select.appendChild(privateOption);
+
+                visibilityField.appendChild(select);
+                body.appendChild(visibilityField);
+
+                const hint = document.createElement('p');
+                hint.className = 'dialog-hint';
+                hint.textContent = t('publicRoomHint');
+                body.appendChild(hint);
+
+                const codeField = document.createElement('div');
+                codeField.className = 'dialog-field';
+                const codeLabel = document.createElement('label');
+                codeLabel.textContent = t('accessCodeLabel');
+                codeField.appendChild(codeLabel);
+
+                const codeInput = document.createElement('input');
+                codeInput.type = 'text';
+                codeInput.placeholder = t('accessCodePlaceholder');
+                codeInput.maxLength = 8;
+                codeField.appendChild(codeInput);
+
+                codeField.style.display = 'none';
+                body.appendChild(codeField);
+
+                select.addEventListener('change', () => {
+                    if (select.value === 'private') {
+                        codeField.style.display = 'flex';
+                        hint.textContent = t('privateRoomHint');
+                        setTimeout(() => codeInput.focus(), 50);
+                    } else {
+                        codeField.style.display = 'none';
+                        hint.textContent = t('publicRoomHint');
+                    }
+                });
+
+                return { selectEl: select, codeInput, hintEl: hint, initialFocus: select };
+            },
+            onConfirm: ({ selectEl, codeInput, errorEl }) => {
+                const isPrivate = selectEl.value === 'private';
+                let code = codeInput.value.trim().toUpperCase();
+                code = code.replace(/[^A-Z0-9]/g, '');
+
+                if (code !== codeInput.value) {
+                    codeInput.value = code;
+                }
+
+                if (isPrivate) {
+                    if (code.length < 4) {
+                        errorEl.textContent = t('accessCodeRequired');
+                        codeInput.focus();
+                        return false;
+                    }
+                    if (code.length > 8) {
+                        code = code.slice(0, 8);
+                        codeInput.value = code;
+                    }
+                } else {
+                    code = null;
+                }
+
+                networkManager.createRoom(roomName, { isPrivate, accessCode: code });
+                if (typeof onSuccess === 'function') {
+                    onSuccess();
+                }
+                return true;
+            }
+        });
+    }
+
+    promptForRoomCode(room) {
+        this.showRoomDialog({
+            title: t('enterRoomCodeTitle'),
+            description: t('enterRoomCodeHelp'),
+            confirmLabel: t('joinRoomAction'),
+            build: (body) => {
+                const codeField = document.createElement('div');
+                codeField.className = 'dialog-field';
+
+                const codeLabel = document.createElement('label');
+                codeLabel.textContent = t('accessCodeLabel');
+                codeField.appendChild(codeLabel);
+
+                const codeInput = document.createElement('input');
+                codeInput.type = 'text';
+                codeInput.placeholder = t('roomCodePlaceholder');
+                codeInput.maxLength = 8;
+                codeField.appendChild(codeInput);
+
+                body.appendChild(codeField);
+
+                return { codeInput, initialFocus: codeInput };
+            },
+            onConfirm: ({ codeInput, errorEl }) => {
+                let code = codeInput.value.trim().toUpperCase();
+                code = code.replace(/[^A-Z0-9]/g, '');
+
+                if (code !== codeInput.value) {
+                    codeInput.value = code;
+                }
+
+                if (!code) {
+                    errorEl.textContent = t('roomCodeRequired');
+                    codeInput.focus();
+                    return false;
+                }
+
+                this.joinRoom(room.id, code);
+                return true;
+            }
+        });
+    }
+
+    showRoomDialog({ title, description, confirmLabel, cancelLabel = t('cancel'), build, onConfirm, onCancel }) {
+        if (!this.roomDialogOverlay) {
+            this.roomDialogOverlay = document.createElement('div');
+            this.roomDialogOverlay.id = 'room-dialog-overlay';
+            this.roomDialogOverlay.className = 'room-dialog-overlay';
+            document.body.appendChild(this.roomDialogOverlay);
+        }
+
+        const overlay = this.roomDialogOverlay;
+        overlay.innerHTML = '';
+        overlay.classList.add('active');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        const dialog = document.createElement('div');
+        dialog.className = 'room-dialog';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        overlay.appendChild(dialog);
+
+        if (title) {
+            const titleEl = document.createElement('h3');
+            titleEl.textContent = title;
+            dialog.appendChild(titleEl);
+        }
+
+        if (description) {
+            const descriptionEl = document.createElement('p');
+            descriptionEl.textContent = description;
+            dialog.appendChild(descriptionEl);
+        }
+
+        const body = document.createElement('div');
+        body.className = 'room-dialog-body';
+        dialog.appendChild(body);
+
+        const context = (typeof build === 'function') ? (build(body) || {}) : {};
+
+        const errorEl = document.createElement('div');
+        errorEl.className = 'dialog-error';
+        dialog.appendChild(errorEl);
+
+        const actions = document.createElement('div');
+        actions.className = 'dialog-actions';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn btn-secondary';
+        cancelBtn.textContent = cancelLabel || t('cancel');
+        actions.appendChild(cancelBtn);
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'btn btn-primary';
+        confirmBtn.textContent = confirmLabel || t('confirmCreateRoom');
+        actions.appendChild(confirmBtn);
+
+        dialog.appendChild(actions);
+
+        const cancelHandler = () => {
+            this.closeRoomDialog();
+            if (typeof onCancel === 'function') {
+                onCancel();
+            }
+        };
+
+        overlay.onclick = (event) => {
+            if (event.target === overlay) {
+                cancelHandler();
+            }
+        };
+
+        cancelBtn.addEventListener('click', cancelHandler);
+
+        confirmBtn.addEventListener('click', () => {
+            errorEl.textContent = '';
+            if (typeof onConfirm === 'function') {
+                const result = onConfirm({ ...context, errorEl });
+                if (result === false) {
+                    return;
+                }
+            }
+            this.closeRoomDialog();
+        });
+
+        if (this.roomDialogKeyHandler) {
+            document.removeEventListener('keydown', this.roomDialogKeyHandler);
+        }
+
+        this.roomDialogKeyHandler = (event) => {
+            if (event.key === 'Escape') {
+                cancelHandler();
+            } else if (event.key === 'Enter' && !(event.target instanceof HTMLTextAreaElement)) {
+                event.preventDefault();
+                confirmBtn.click();
+            }
+        };
+
+        document.addEventListener('keydown', this.roomDialogKeyHandler);
+
+        setTimeout(() => {
+            if (context && context.initialFocus && typeof context.initialFocus.focus === 'function') {
+                context.initialFocus.focus();
+            } else {
+                const focusable = dialog.querySelector('input, select, button, textarea');
+                if (focusable && typeof focusable.focus === 'function') {
+                    focusable.focus();
+                } else {
+                    confirmBtn.focus();
+                }
+            }
+        }, 50);
+
+        return { overlay, confirmBtn };
+    }
+
+    closeRoomDialog() {
+        if (this.roomDialogOverlay) {
+            this.roomDialogOverlay.classList.remove('active');
+            this.roomDialogOverlay.setAttribute('aria-hidden', 'true');
+            this.roomDialogOverlay.innerHTML = '';
+            this.roomDialogOverlay.onclick = null;
+        }
+
+        if (this.roomDialogKeyHandler) {
+            document.removeEventListener('keydown', this.roomDialogKeyHandler);
+            this.roomDialogKeyHandler = null;
+        }
     }
 
     leaveRoom() {
@@ -2441,25 +3317,19 @@ class UIManager {
         networkManager.toggleReady();
         const btn = document.getElementById('ready-btn');
         if (btn) {
-            if (btn.textContent.includes('Ready')) {
-                btn.textContent = '⏳ Waiting...';
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-secondary');
-            } else {
-                btn.textContent = '✓ Ready';
-                btn.classList.remove('btn-secondary');
-                btn.classList.add('btn-primary');
-            }
+            btn.disabled = true;
+            btn.classList.add('btn-pending');
+            btn.setAttribute('aria-busy', 'true');
         }
     }
 
     showRoomView(room) {
         const roomView = document.getElementById('room-view');
         const roomsSection = document.querySelector('.rooms-section');
-        
+
         if (roomView && roomsSection) {
-            roomsSection.style.display = 'none';
-            roomView.style.display = 'block';
+            roomsSection.setAttribute('hidden', '');
+            roomView.removeAttribute('hidden');
             this.updateRoomView(room);
         }
     }
@@ -2467,10 +3337,10 @@ class UIManager {
     hideRoomView() {
         const roomView = document.getElementById('room-view');
         const roomsSection = document.querySelector('.rooms-section');
-        
+
         if (roomView && roomsSection) {
-            roomView.style.display = 'none';
-            roomsSection.style.display = 'block';
+            roomView.setAttribute('hidden', '');
+            roomsSection.removeAttribute('hidden');
         }
     }
 
@@ -2479,9 +3349,36 @@ class UIManager {
         const playersListEl = document.getElementById('room-players-list');
         const colorOptionsEl = document.getElementById('color-options');
         const statusEl = document.getElementById('room-status');
-        
+        const readyBtn = document.getElementById('ready-btn');
+        const socketId = networkManager.socket ? networkManager.socket.id : null;
+        const sessionId = networkManager.sessionId || null;
+        const privacyDetailsEl = document.getElementById('room-privacy-details');
+        const isHost = (sessionId && room.hostSessionId === sessionId) || (socketId && room.hostId === socketId);
+
         if (roomNameEl) {
             roomNameEl.textContent = room.name;
+        }
+
+        if (privacyDetailsEl) {
+            privacyDetailsEl.innerHTML = '';
+
+            const privacyTag = document.createElement('span');
+            privacyTag.className = 'room-privacy-tag' + (room.isPrivate ? ' private' : '');
+            privacyTag.setAttribute('data-i18n', room.isPrivate ? 'privateRoom' : 'publicRoom');
+            privacyTag.textContent = t(room.isPrivate ? 'privateRoom' : 'publicRoom');
+            privacyDetailsEl.appendChild(privacyTag);
+
+            if (room.isPrivate && room.accessCode) {
+                const codeSpan = document.createElement('span');
+                codeSpan.className = 'room-privacy-code';
+                const codeLabel = document.createElement('span');
+                codeLabel.textContent = `${t('roomCodeLabel')}: `;
+                const codeValue = document.createElement('strong');
+                codeValue.textContent = room.accessCode;
+                codeSpan.appendChild(codeLabel);
+                codeSpan.appendChild(codeValue);
+                privacyDetailsEl.appendChild(codeSpan);
+            }
         }
 
         // Update players list
@@ -2489,12 +3386,60 @@ class UIManager {
             playersListEl.innerHTML = '';
             room.players.forEach(player => {
                 const playerDiv = document.createElement('div');
-                playerDiv.className = 'room-player-item';
-                playerDiv.innerHTML = `
-                    <div class="room-player-color" style="background: ${player.color};"></div>
-                    <div class="room-player-name">${player.name}</div>
-                    <div class="room-player-status">${player.ready ? '✓ Ready' : 'Not Ready'}</div>
-                `;
+                playerDiv.className = 'room-player-item' + (player.connected ? '' : ' is-offline');
+
+                const mainSection = document.createElement('div');
+                mainSection.className = 'room-player-main';
+
+                const colorSwatch = document.createElement('div');
+                colorSwatch.className = 'room-player-color';
+                colorSwatch.style.background = player.color;
+                mainSection.appendChild(colorSwatch);
+
+                const infoSection = document.createElement('div');
+                infoSection.className = 'room-player-info';
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'room-player-name';
+                nameEl.textContent = player.name;
+                infoSection.appendChild(nameEl);
+
+                if (player.sessionId === room.hostSessionId) {
+                    const roleEl = document.createElement('div');
+                    roleEl.className = 'room-player-role';
+                    roleEl.textContent = t('hostLabel');
+                    infoSection.appendChild(roleEl);
+                }
+
+                mainSection.appendChild(infoSection);
+                playerDiv.appendChild(mainSection);
+
+                const controlsSection = document.createElement('div');
+                controlsSection.className = 'room-player-controls';
+
+                const statusBadge = document.createElement('span');
+                if (player.connected) {
+                    statusBadge.className = 'room-player-status ' + (player.ready ? 'ready' : 'not-ready');
+                    statusBadge.textContent = player.ready ? t('ready') : t('notReady');
+                } else {
+                    statusBadge.className = 'room-player-status offline';
+                    statusBadge.textContent = t('disconnectedFromServer');
+                }
+                controlsSection.appendChild(statusBadge);
+
+                if (isHost && (player.sessionId !== sessionId)) {
+                    const kickBtn = document.createElement('button');
+                    kickBtn.type = 'button';
+                    kickBtn.className = 'room-player-kick';
+                    kickBtn.textContent = t('kickPlayer');
+                    kickBtn.setAttribute('aria-label', `${t('kickPlayer')} ${player.name}`);
+                    kickBtn.addEventListener('click', () => {
+                        networkManager.kickPlayer(player.sessionId || player.id);
+                    });
+                    controlsSection.appendChild(kickBtn);
+                }
+
+                playerDiv.appendChild(controlsSection);
                 playersListEl.appendChild(playerDiv);
             });
         }
@@ -2503,80 +3448,127 @@ class UIManager {
         if (colorOptionsEl) {
             colorOptionsEl.innerHTML = '';
             const COLORS = ['#FF1493', '#00D9FF', '#FFDB58', '#39FF14'];
-            const myPlayer = room.players.find(p => p.id === networkManager.socket.id);
-            
+            const myPlayer = (sessionId
+                ? room.players.find(p => p.sessionId === sessionId)
+                : (socketId ? room.players.find(p => p.id === socketId) : null));
+
             COLORS.forEach(color => {
-                const colorDiv = document.createElement('div');
-                colorDiv.className = 'color-option';
-                colorDiv.style.background = color;
-                
+                const colorButton = document.createElement('button');
+                colorButton.type = 'button';
+                colorButton.className = 'color-option';
+                colorButton.style.background = color;
+                colorButton.setAttribute('aria-label', `${t('yourColor')} ${color}`);
+                colorButton.setAttribute('role', 'listitem');
+
                 const isUsed = room.players.some(p => p.color === color);
                 const isMyColor = myPlayer && myPlayer.color === color;
-                
+                colorButton.setAttribute('aria-pressed', isMyColor ? 'true' : 'false');
+
                 if (isMyColor) {
-                    colorDiv.classList.add('selected');
+                    colorButton.classList.add('selected');
                 } else if (isUsed) {
-                    colorDiv.classList.add('disabled');
+                    colorButton.classList.add('disabled');
+                    colorButton.disabled = true;
+                    colorButton.setAttribute('aria-disabled', 'true');
                 } else {
-                    colorDiv.addEventListener('click', () => {
+                    colorButton.addEventListener('click', () => {
                         networkManager.changeColor(color);
                     });
                 }
-                
-                colorOptionsEl.appendChild(colorDiv);
+
+                colorOptionsEl.appendChild(colorButton);
             });
         }
 
         // Update status
         if (statusEl) {
-            const readyCount = room.players.filter(p => p.ready).length;
-            if (readyCount === room.players.length && room.players.length > 0) {
-                statusEl.textContent = 'Starting game...';
+            const connectedPlayers = room.players.filter(p => p.connected);
+            const readyCount = connectedPlayers.filter(p => p.ready).length;
+            if (connectedPlayers.length > 0 && readyCount === connectedPlayers.length) {
+                statusEl.setAttribute('data-i18n', 'startingGame');
+                statusEl.textContent = t('startingGame');
                 statusEl.style.background = 'rgba(46, 213, 115, 0.15)';
                 statusEl.style.borderColor = 'rgba(46, 213, 115, 0.3)';
             } else {
-                statusEl.textContent = `${readyCount}/${room.players.length} players ready`;
+                statusEl.removeAttribute('data-i18n');
+                const totalCount = connectedPlayers.length || room.players.length;
+                statusEl.innerHTML = `<span class="ready-count">${readyCount}/${totalCount}</span> <span data-i18n="playersReadyLabel">${t('playersReadyLabel')}</span>`;
                 statusEl.style.background = 'rgba(255, 219, 88, 0.15)';
                 statusEl.style.borderColor = 'rgba(255, 219, 88, 0.3)';
             }
+        }
+
+        if (readyBtn) {
+            const myPlayer = (sessionId
+                ? room.players.find(p => p.sessionId === sessionId)
+                : (socketId ? room.players.find(p => p.id === socketId) : null));
+            const isReady = !!myPlayer?.ready;
+
+            readyBtn.disabled = !myPlayer?.connected;
+            readyBtn.classList.remove('btn-pending');
+            readyBtn.removeAttribute('aria-busy');
+            readyBtn.classList.toggle('btn-secondary', isReady);
+            readyBtn.classList.toggle('btn-primary', !isReady);
+            readyBtn.setAttribute('aria-pressed', isReady ? 'true' : 'false');
+            readyBtn.innerHTML = isReady
+                ? '✔ <span data-i18n="ready">Ready</span>'
+                : '✓ <span data-i18n="ready">Ready</span>';
         }
     }
 
     startOnlineGame(data) {
         // Map network players to game players
         const numPlayers = data.players.length;
-        
+
         // Store network player info for synchronization
         this.networkPlayers = {};
         this.localPlayerIndex = -1;
         this.isOnlineMode = true; // Flag to indicate online mode
-        
+        this.isOnlineHost = !!(networkManager.socket && data.hostId === networkManager.socket.id);
+        this.stateBroadcastSequence = 0;
+        this.lastStateSentAt = performance.now ? performance.now() : Date.now();
+        this.lastRemoteStateAt = 0;
+        this.localPlayerSessionId = networkManager.sessionId || null;
+        this.pendingLocalInputs = [];
+        this.lastAckedSequence = 0;
+        gameState.lastInputSequenceByPlayer = {};
+
         // Update game state with player colors from network and map IDs
         data.players.forEach((netPlayer, index) => {
             gameState.settings.colors[index] = netPlayer.color;
-            this.networkPlayers[netPlayer.id] = index;
-            
+            const playerKey = netPlayer.sessionId || netPlayer.id;
+            if (playerKey) {
+                this.networkPlayers[playerKey] = index;
+                gameState.lastInputSequenceByPlayer[playerKey] = 0;
+            }
+
             // Identify which player is the local player
-            if (networkManager.socket && netPlayer.id === networkManager.socket.id) {
+            const isLocalBySession = this.localPlayerSessionId && netPlayer.sessionId === this.localPlayerSessionId;
+            const isLocalBySocket = networkManager.socket && netPlayer.id === networkManager.socket.id;
+            if (isLocalBySession || isLocalBySocket) {
                 this.localPlayerIndex = index;
             }
         });
-        
+
         // Start the game with proper player count
-        this.startGame(numPlayers);
-        
+        this.startGame(numPlayers, { pieceSeed: data.pieceSeed, pieceSequence: data.pieceSequence });
+
         // Set up online synchronization
         this.setupOnlineSync();
-        
+
+        if (!this.isOnlineHost) {
+            networkManager.requestSync();
+        }
+
         console.log('Online game started with players:', data.players);
         console.log('Local player index:', this.localPlayerIndex);
     }
     
     setupOnlineSync() {
         if (!networkManager.socket) return;
-        
+
         const VALID_ACTIONS = ['move', 'rotate', 'drop', 'hardDrop'];
-        
+
         // Listen for remote player inputs
         networkManager.on('playerInput', (data) => {
             // Validate input data
@@ -2584,40 +3576,315 @@ class UIManager {
                 console.warn('Invalid player input data received:', data);
                 return;
             }
-            
+
             // Validate action type
             if (!VALID_ACTIONS.includes(data.action)) {
                 console.warn('Invalid action type received:', data.action);
                 return;
             }
-            
+
             const playerIndex = this.networkPlayers[data.playerId];
             if (playerIndex !== undefined && playerIndex !== this.localPlayerIndex) {
                 const player = gameState.players[playerIndex];
                 if (player && !player.gameOver) {
+                    if (typeof data.sequence === 'number') {
+                        gameState.lastInputSequenceByPlayer[data.playerId] = data.sequence;
+                    }
                     // Apply the action from remote player
                     switch (data.action) {
                         case 'move':
                             // Validate direction is -1 or 1
                             if (typeof data.direction === 'number' && (data.direction === -1 || data.direction === 1)) {
-                                player.move(data.direction);
+                                player.move(data.direction, { propagate: false });
                             } else {
                                 console.warn('Invalid move direction:', data.direction);
                             }
                             break;
                         case 'rotate':
-                            player.rotate();
+                            player.rotate({ propagate: false });
                             break;
                         case 'drop':
-                            player.drop();
+                            player.drop({ propagate: false });
                             break;
                         case 'hardDrop':
-                            player.hardDrop();
+                            player.hardDrop({ propagate: false });
                             break;
                     }
                 }
             }
         });
+
+        networkManager.on('inputAck', (payload) => {
+            this.handleInputAck(payload);
+        });
+    }
+
+    buildAuthoritativeStatePayload() {
+        const sequence = this.stateBroadcastSequence + 1;
+        const boardSnapshot = gameState.board.map(row => [...row]);
+        const queueSnapshot = gameState.pieceQueue.slice(0, 48);
+        const playersSnapshot = gameState.players.map((player, index) => ({
+            index,
+            position: { x: player.position.x, y: player.position.y },
+            dropCounter: player.dropCounter,
+            dropInterval: player.dropInterval,
+            gameOver: player.gameOver,
+            score: player.score,
+            lines: player.lines,
+            level: player.level,
+            color: player.color,
+            currentPiece: player.currentPiece ? player.currentPiece.map(row => [...row]) : null,
+            nextPiece: player.nextPiece ? player.nextPiece.map(row => [...row]) : null
+        }));
+
+        return {
+            sequence,
+            board: boardSnapshot,
+            queue: queueSnapshot,
+            players: playersSnapshot,
+            sharedStats: { ...gameState.sharedStats },
+            isGameOver: gameState.isGameOver,
+            inputAcks: { ...gameState.lastInputSequenceByPlayer }
+        };
+    }
+
+    maybeBroadcastState() {
+        if (!this.isOnlineHost || !networkManager.connected) {
+            return;
+        }
+
+        const now = performance.now ? performance.now() : Date.now();
+        const intervalMet = (now - this.lastStateSentAt) >= this.stateBroadcastInterval;
+
+        if (!intervalMet && !gameState.stateDirty && !gameState.sharedStatsDirty) {
+            return;
+        }
+
+        const payload = this.buildAuthoritativeStatePayload();
+        this.stateBroadcastSequence = payload.sequence;
+        gameState.stateSequence = payload.sequence;
+
+        networkManager.sendGameState(payload);
+        this.lastStateSentAt = now;
+        gameState.stateDirty = false;
+        gameState.sharedStatsDirty = false;
+    }
+
+    receiveAuthoritativeState(data = {}) {
+        if (!this.isOnlineMode || this.isOnlineHost) {
+            return;
+        }
+
+        if (!data || typeof data.sequence !== 'number') {
+            return;
+        }
+
+        if (data.sequence <= gameState.lastAuthoritativeSequence) {
+            return;
+        }
+
+        gameState.lastAuthoritativeSequence = data.sequence;
+        this.lastRemoteStateAt = performance.now ? performance.now() : Date.now();
+
+        if (data.inputAcks && typeof data.inputAcks === 'object') {
+            gameState.lastInputSequenceByPlayer = {
+                ...gameState.lastInputSequenceByPlayer,
+                ...data.inputAcks
+            };
+
+            if (this.localPlayerSessionId && Object.prototype.hasOwnProperty.call(data.inputAcks, this.localPlayerSessionId)) {
+                this.confirmAuthoritativeAck(data.inputAcks[this.localPlayerSessionId]);
+            }
+        }
+
+        if (Array.isArray(data.board) && data.board.length) {
+            gameState.board = data.board.map(row => Array.isArray(row) ? [...row] : []);
+        }
+
+        if (Array.isArray(data.queue) && data.queue.length) {
+            gameState.pieceQueue = data.queue.slice();
+            ensurePieceQueue();
+        }
+
+        if (Array.isArray(data.players)) {
+            data.players.forEach((snapshot, index) => {
+                const player = gameState.players[index];
+                if (!player) return;
+
+                if (snapshot.position) {
+                    player.position.x = typeof snapshot.position.x === 'number' ? snapshot.position.x : player.position.x;
+                    player.position.y = typeof snapshot.position.y === 'number' ? snapshot.position.y : player.position.y;
+                    if (!player.renderPosition) {
+                        player.renderPosition = { x: player.position.x, y: player.position.y };
+                    }
+                    if (Math.abs(player.renderPosition.x - player.position.x) > 3) {
+                        player.renderPosition.x = player.position.x;
+                    }
+                    if (Math.abs(player.renderPosition.y - player.position.y) > 4) {
+                        player.renderPosition.y = player.position.y;
+                    }
+                }
+
+                if (Array.isArray(snapshot.currentPiece)) {
+                    player.currentPiece = snapshot.currentPiece.map(row => Array.isArray(row) ? [...row] : []);
+                }
+
+                if (Array.isArray(snapshot.nextPiece)) {
+                    player.nextPiece = snapshot.nextPiece.map(row => Array.isArray(row) ? [...row] : []);
+                }
+
+                if (typeof snapshot.dropCounter === 'number') {
+                    player.dropCounter = snapshot.dropCounter;
+                }
+
+                if (typeof snapshot.dropInterval === 'number') {
+                    player.dropInterval = snapshot.dropInterval;
+                }
+
+                if (typeof snapshot.score === 'number') {
+                    player.score = snapshot.score;
+                }
+
+                if (typeof snapshot.lines === 'number') {
+                    player.lines = snapshot.lines;
+                }
+
+                if (typeof snapshot.level === 'number') {
+                    player.level = snapshot.level;
+                }
+
+                if (typeof snapshot.color === 'string') {
+                    player.color = snapshot.color;
+                }
+
+                player.gameOver = !!snapshot.gameOver;
+
+                this.updatePlayerInfo(player);
+                this.drawNextPiece(player);
+            });
+        }
+
+        if (data.sharedStats && typeof data.sharedStats === 'object') {
+            gameState.sharedStats = {
+                ...gameState.sharedStats,
+                ...data.sharedStats
+            };
+            gameState.sharedStatsDirty = true;
+            this.updateTeamStatsIfNeeded();
+        }
+
+        if (typeof data.isGameOver === 'boolean') {
+            gameState.isGameOver = data.isGameOver;
+        }
+
+        this.drawBoard();
+        this.reapplyPendingInputs();
+
+        if (this.awaitingReconnect) {
+            this.awaitingReconnect = false;
+            if (this.resumeOnReconnect) {
+                this.setPauseState(false, { silent: true });
+            }
+            this.resumeOnReconnect = false;
+            this.setReconnectionState('restored');
+        }
+    }
+
+    handleHostChanged(payload = {}) {
+        if (!this.isOnlineMode) {
+            return;
+        }
+
+        const newHostId = payload.hostId || null;
+        const newHostSessionId = payload.hostSessionId || null;
+        if (!networkManager.socket && !newHostSessionId) {
+            return;
+        }
+
+        const wasHost = this.isOnlineHost;
+        const socketMatch = networkManager.socket && newHostId && networkManager.socket.id === newHostId;
+        const sessionMatch = this.localPlayerSessionId && newHostSessionId === this.localPlayerSessionId;
+        this.isOnlineHost = socketMatch || sessionMatch;
+
+        if (this.isOnlineHost) {
+            this.stateBroadcastSequence = gameState.stateSequence || 0;
+            this.lastStateSentAt = performance.now ? performance.now() : Date.now();
+            gameState.stateDirty = true;
+            gameState.sharedStatsDirty = true;
+        } else if (wasHost) {
+            networkManager.requestSync();
+        }
+    }
+
+    setReconnectionState(state, context = {}) {
+        if (!this.reconnectBanner) {
+            const banner = document.createElement('div');
+            banner.id = 'reconnect-banner';
+            banner.className = 'reconnect-banner';
+            const text = document.createElement('span');
+            text.className = 'reconnect-banner__text';
+            banner.appendChild(text);
+            document.body.appendChild(banner);
+            this.reconnectBanner = banner;
+        }
+
+        const banner = this.reconnectBanner;
+        const textEl = banner.querySelector('.reconnect-banner__text');
+        if (!textEl) {
+            return;
+        }
+
+        if (this.pendingReconnectHide) {
+            clearTimeout(this.pendingReconnectHide);
+            this.pendingReconnectHide = null;
+        }
+
+        const resetClasses = () => {
+            banner.classList.remove('is-warning', 'is-error', 'is-success');
+        };
+
+        switch (state) {
+            case 'lost':
+            case 'retry': {
+                resetClasses();
+                banner.classList.add('is-warning');
+                const attempt = typeof context.attempt === 'number' && context.attempt > 0
+                    ? context.attempt
+                    : 1;
+                const max = typeof context.maxAttempts === 'number' && context.maxAttempts > 0
+                    ? context.maxAttempts
+                    : '∞';
+                textEl.textContent = `${t('connectionLost')} · ${t('attemptingReconnect')} (${attempt}/${max})`;
+                banner.classList.add('visible');
+                break;
+            }
+            case 'failed': {
+                resetClasses();
+                banner.classList.add('is-error');
+                textEl.textContent = `${t('reconnectFailed')} · ${t('reconnectFailedMsg')}`;
+                banner.classList.add('visible');
+                this.pendingReconnectHide = setTimeout(() => {
+                    banner.classList.remove('visible');
+                    this.pendingReconnectHide = null;
+                }, 5000);
+                break;
+            }
+            case 'restored': {
+                resetClasses();
+                banner.classList.add('is-success');
+                textEl.textContent = `${t('connectionRestored')} · ${t('resumingPlay')}`;
+                banner.classList.add('visible');
+                this.pendingReconnectHide = setTimeout(() => {
+                    banner.classList.remove('visible');
+                    this.pendingReconnectHide = null;
+                }, 1600);
+                break;
+            }
+            case 'hidden':
+            default: {
+                banner.classList.remove('visible');
+            }
+        }
     }
 
     showStyledMessage(title, message, type = 'info') {
@@ -3044,7 +4311,7 @@ function init() {
         }
     }
 
-    const ui = new UIManager();
+    window.uiManager = new UIManager();
 }
 
 // Start the game when the page loads
