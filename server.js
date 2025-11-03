@@ -33,6 +33,8 @@ class Room {
         this.maxPlayers = 4;
         this.gameStarted = false;
         this.usedColors = new Set();
+        this.isPrivate = false;
+        this.accessCode = null;
     }
 
     addPlayer(playerId, playerName) {
@@ -107,7 +109,8 @@ class Room {
             hostId: this.hostId,
             players: this.players.length,
             maxPlayers: this.maxPlayers,
-            gameStarted: this.gameStarted
+            gameStarted: this.gameStarted,
+            isPrivate: this.isPrivate
         };
     }
 
@@ -119,6 +122,8 @@ class Room {
             players: this.players,
             maxPlayers: this.maxPlayers,
             gameStarted: this.gameStarted,
+            isPrivate: this.isPrivate,
+            accessCode: this.accessCode,
             availableColors: AVAILABLE_COLORS.filter(c => !this.usedColors.has(c))
         };
     }
@@ -126,7 +131,11 @@ class Room {
 
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
-    
+
+    const broadcastRoomsList = () => {
+        io.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
+    };
+
     players.set(socket.id, {
         id: socket.id,
         name: `Player ${players.size + 1}`,
@@ -160,10 +169,34 @@ io.on('connection', (socket) => {
 
     // Create room
     socket.on('create-room', (data) => {
+        const payload = data || {};
+        const isPrivate = !!payload.isPrivate;
+        let accessCode = null;
+
+        if (isPrivate) {
+            if (typeof payload.accessCode !== 'string') {
+                socket.emit('error', { message: 'Access code required' });
+                return;
+            }
+
+            accessCode = payload.accessCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+            if (accessCode.length < 4) {
+                socket.emit('error', { message: 'Access code required' });
+                return;
+            }
+
+            if (accessCode.length > 8) {
+                accessCode = accessCode.slice(0, 8);
+            }
+        }
+
         const roomId = `room_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const roomName = data.name || `Room ${rooms.size + 1}`;
+        const roomName = payload.name || `Room ${rooms.size + 1}`;
         const room = new Room(roomId, roomName, socket.id);
-        
+        room.isPrivate = isPrivate;
+        room.accessCode = accessCode;
+
         const player = players.get(socket.id);
         if (player) {
             player.roomId = roomId;
@@ -174,19 +207,32 @@ io.on('connection', (socket) => {
         socket.join(roomId);
 
         socket.emit('room-created', room.getFullInfo());
-        io.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
-        
+        broadcastRoomsList();
+
         console.log(`Room created: ${roomName} (${roomId})`);
     });
 
     // Join room
-    socket.on('join-room', (roomId) => {
+    socket.on('join-room', (data) => {
+        const payload = typeof data === 'object' && data !== null ? data : { roomId: data };
+        const roomId = payload.roomId;
+        const accessCode = typeof payload.accessCode === 'string'
+            ? payload.accessCode.trim().toUpperCase()
+            : null;
+
         const room = rooms.get(roomId);
         const player = players.get(socket.id);
-        
+
         if (!room) {
             socket.emit('error', { message: 'Room not found' });
             return;
+        }
+
+        if (room.isPrivate) {
+            if (!accessCode || accessCode !== room.accessCode) {
+                socket.emit('error', { message: 'Invalid access code' });
+                return;
+            }
         }
 
         if (room.gameStarted) {
@@ -199,11 +245,12 @@ io.on('connection', (socket) => {
             if (success) {
                 player.roomId = roomId;
                 socket.join(roomId);
-                
+
                 // Notify all players in room
                 io.to(roomId).emit('room-update', room.getFullInfo());
                 socket.emit('room-joined', room.getFullInfo());
-                
+                broadcastRoomsList();
+
                 console.log(`${player.name} joined room ${room.name}`);
             } else {
                 socket.emit('error', { message: 'Room is full' });
@@ -222,16 +269,60 @@ io.on('connection', (socket) => {
                 
                 if (room.players.length === 0) {
                     rooms.delete(player.roomId);
-                    io.emit('rooms-list', Array.from(rooms.values()).map(r => r.toJSON()));
+                    broadcastRoomsList();
                     console.log(`Room ${room.name} deleted (empty)`);
                 } else {
                     io.to(player.roomId).emit('room-update', room.getFullInfo());
+                    broadcastRoomsList();
                 }
-                
+
                 player.roomId = null;
                 socket.emit('left-room');
             }
         }
+    });
+
+    socket.on('kick-player', (targetId) => {
+        const hostPlayer = players.get(socket.id);
+        if (!hostPlayer || !hostPlayer.roomId) {
+            return;
+        }
+
+        const room = rooms.get(hostPlayer.roomId);
+        if (!room || room.hostId !== socket.id) {
+            return;
+        }
+
+        if (targetId === socket.id) {
+            return;
+        }
+
+        const targetPlayer = players.get(targetId);
+        if (!targetPlayer || targetPlayer.roomId !== room.id) {
+            return;
+        }
+
+        const wasRemoved = room.removePlayer(targetId);
+        if (!wasRemoved) {
+            return;
+        }
+
+        targetPlayer.roomId = null;
+
+        const targetSocket = io.sockets.sockets.get(targetId);
+        if (targetSocket) {
+            targetSocket.leave(room.id);
+            targetSocket.emit('left-room');
+            targetSocket.emit('kicked', { roomId: room.id, roomName: room.name });
+        }
+
+        if (room.players.length === 0) {
+            rooms.delete(room.id);
+        } else {
+            io.to(room.id).emit('room-update', room.getFullInfo());
+        }
+
+        broadcastRoomsList();
     });
 
     // Change color

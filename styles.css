@@ -449,25 +449,25 @@ header h1 span {
     background: linear-gradient(165deg, rgba(12, 16, 28, 0.92), rgba(22, 30, 48, 0.88));
     min-height: 0;
     overflow: auto;
-    padding: 120px 16px 16px;
+    padding: 88px 16px 16px;
     position: relative;
 }
 
 #game-screen.compact {
-    padding-top: 140px;
+    padding-top: 110px;
 }
 
 .hud-layer {
     position: absolute;
-    top: 16px;
+    top: 8px;
     left: 0;
     width: 100%;
-    padding: 0 16px;
+    padding: 0 12px;
     display: flex;
     justify-content: center;
     align-items: flex-start;
     pointer-events: none;
-    gap: 16px;
+    gap: 12px;
     z-index: 10;
 }
 
@@ -475,16 +475,16 @@ header h1 span {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    padding: 14px 26px 18px;
-    border-radius: 20px;
-    background: rgba(10, 14, 24, 0.85);
-    border: 1px solid rgba(0, 217, 255, 0.28);
+    gap: 8px;
+    padding: 10px 18px 14px;
+    border-radius: 16px;
+    background: rgba(10, 14, 24, 0.78);
+    border: 1px solid rgba(0, 217, 255, 0.22);
     box-shadow:
-        0 18px 40px rgba(0, 0, 0, 0.45),
-        0 0 24px rgba(0, 217, 255, 0.25);
-    backdrop-filter: blur(14px);
-    min-width: min(360px, 90vw);
+        0 12px 30px rgba(0, 0, 0, 0.38),
+        0 0 18px rgba(0, 217, 255, 0.18);
+    backdrop-filter: blur(10px);
+    min-width: clamp(220px, 38vw, 320px);
     opacity: 0;
     transform: translateY(-12px) scale(0.96);
     transition: transform 0.35s var(--transition-medium), opacity 0.35s var(--transition-medium);
@@ -505,14 +505,14 @@ header h1 span {
     column-gap: 12px;
     row-gap: 4px;
     align-items: center;
-    padding: 14px 20px;
-    border-radius: 16px;
-    background: radial-gradient(circle at 20% 20%, rgba(0, 217, 255, 0.55), rgba(0, 217, 255, 0) 65%), rgba(8, 12, 24, 0.9);
-    border: 1px solid rgba(140, 208, 255, 0.45);
+    padding: 12px 16px;
+    border-radius: 14px;
+    background: radial-gradient(circle at 15% 15%, rgba(0, 217, 255, 0.45), rgba(0, 217, 255, 0) 60%), rgba(8, 12, 24, 0.9);
+    border: 1px solid rgba(140, 208, 255, 0.32);
     box-shadow:
-        inset 0 0 35px rgba(0, 217, 255, 0.25),
-        0 0 22px rgba(58, 153, 255, 0.25);
-    min-width: min(320px, 85vw);
+        inset 0 0 24px rgba(0, 217, 255, 0.18),
+        0 0 16px rgba(58, 153, 255, 0.18);
+    min-width: clamp(200px, 34vw, 280px);
     position: relative;
     overflow: hidden;
 }
@@ -541,7 +541,7 @@ header h1 span {
 }
 
 .score-card__value {
-    font-size: clamp(1.8rem, 5vw, 2.6rem);
+    font-size: clamp(1.6rem, 4.5vw, 2.15rem);
     font-weight: 700;
     color: #8cfffb;
     text-shadow:
@@ -560,11 +560,11 @@ header h1 span {
 }
 
 .score-card__meta-item {
-    padding: 4px 10px;
+    padding: 3px 10px;
     border-radius: 999px;
     background: rgba(58, 153, 255, 0.15);
     color: rgba(173, 208, 255, 0.95);
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     border: 1px solid rgba(140, 208, 255, 0.4);
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -1209,7 +1209,7 @@ canvas {
 
     #game-screen.active {
         gap: 6px;
-        padding: 6px;
+        padding: 70px 10px 12px;
     }
 
     .team-score-card {
@@ -1252,7 +1252,7 @@ canvas {
 
     #game-screen.active {
         min-height: unset;
-        padding-top: 132px;
+        padding-top: 104px;
     }
 }
 
@@ -1272,22 +1272,34 @@ canvas {
 
     #game-screen.active {
         gap: 8px;
-        padding: 110px 8px 12px;
+        padding: 96px 8px 12px;
+    }
+
+    .room-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .room-meta {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
     }
 
     .team-stats {
-        padding: 10px 16px;
+        padding: 10px 14px;
         gap: 8px;
-        min-width: min(280px, 95vw);
+        min-width: clamp(210px, 80vw, 260px);
     }
 
     .team-score-card {
-        min-width: min(260px, 90vw);
-        padding: 10px 14px;
+        min-width: clamp(190px, 75vw, 240px);
+        padding: 10px 12px;
     }
 
     .score-card__value {
-        font-size: clamp(1.4rem, 6vw, 2rem);
+        font-size: clamp(1.35rem, 6vw, 1.85rem);
     }
 
     .combo-indicator {
@@ -1693,6 +1705,36 @@ canvas {
     font-size: 0.85rem;
 }
 
+.room-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    min-width: 0;
+}
+
+.room-status-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(196, 113, 237, 0.25);
+    color: var(--text-secondary);
+    background: rgba(196, 113, 237, 0.12);
+}
+
+.room-status-label.in-game {
+    border-color: rgba(255, 107, 157, 0.3);
+    background: rgba(255, 107, 157, 0.12);
+    color: var(--accent);
+}
+
+.room-meta-icon {
+    font-size: 1.1rem;
+    color: var(--accent-strong);
+}
+
 .room-view {
     display: flex;
     flex-direction: column;
@@ -1712,9 +1754,18 @@ canvas {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
     margin-bottom: 20px;
     padding-bottom: 16px;
     border-bottom: 2px solid rgba(0, 217, 255, 0.2);
+}
+
+.room-header-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .room-header h3 {
@@ -1723,6 +1774,40 @@ canvas {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+.room-privacy-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-height: 18px;
+}
+
+.room-privacy-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: rgba(0, 217, 255, 0.12);
+    border: 1px solid rgba(0, 217, 255, 0.35);
+    color: rgba(0, 217, 255, 0.85);
+}
+
+.room-privacy-tag.private {
+    background: rgba(255, 71, 87, 0.12);
+    border-color: rgba(255, 71, 87, 0.35);
+    color: rgba(255, 71, 87, 0.9);
+}
+
+.room-privacy-code {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
 }
 
 .btn-small {
@@ -1749,11 +1834,21 @@ canvas {
 .room-player-item {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
     padding: 12px;
     background: rgba(245, 240, 255, 0.98);
     border-radius: var(--radius-lg);
     border: 2px solid rgba(196, 113, 237, 0.2);
+    flex-wrap: wrap;
+}
+
+.room-player-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .room-player-color {
@@ -1766,19 +1861,169 @@ canvas {
 .room-player-name {
     font-weight: 700;
     color: var(--text-primary);
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
+}
+
+.room-player-role {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.room-player-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.room-player-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .room-player-status {
     font-size: 0.85rem;
     padding: 4px 10px;
     border-radius: var(--radius-lg);
-    background: rgba(46, 213, 115, 0.15);
-    color: var(--success);
     font-weight: 700;
-    border: 1px solid rgba(46, 213, 115, 0.3);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+.room-player-status.ready {
+    background: rgba(46, 213, 115, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(46, 213, 115, 0.3);
+}
+
+.room-player-status.not-ready {
+    background: rgba(255, 219, 88, 0.18);
+    color: var(--warning);
+    border: 1px solid rgba(255, 219, 88, 0.35);
+}
+
+.room-player-kick {
+    padding: 6px 12px;
+    border-radius: var(--radius-lg);
+    border: 1px dashed rgba(255, 71, 87, 0.5);
+    background: rgba(255, 71, 87, 0.12);
+    color: rgba(255, 71, 87, 0.95);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.room-player-kick:hover,
+.room-player-kick:focus-visible {
+    background: rgba(255, 71, 87, 0.22);
+    border-color: rgba(255, 71, 87, 0.7);
+}
+
+.room-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 10, 20, 0.78);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 1200;
+}
+
+.room-dialog-overlay.active {
+    display: flex;
+}
+
+.room-dialog {
+    width: min(360px, 92vw);
+    background: linear-gradient(165deg, rgba(14, 18, 32, 0.95), rgba(24, 34, 56, 0.9));
+    border: 1px solid rgba(0, 217, 255, 0.35);
+    border-radius: 18px;
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), 0 0 40px rgba(0, 217, 255, 0.2);
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    color: #e4f5ff;
+}
+
+.room-dialog h3 {
+    font-size: 1.15rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.room-dialog p {
+    font-size: 0.85rem;
+    color: rgba(228, 245, 255, 0.75);
+    line-height: 1.4;
+}
+
+.room-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dialog-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.room-dialog label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(140, 208, 255, 0.85);
+}
+
+.room-dialog select,
+.room-dialog input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 217, 255, 0.35);
+    background: rgba(12, 18, 32, 0.8);
+    color: #e4f5ff;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+}
+
+.room-dialog input[type="text"]::placeholder {
+    color: rgba(228, 245, 255, 0.4);
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.room-dialog .btn {
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+}
+
+.dialog-error {
+    font-size: 0.75rem;
+    color: rgba(255, 107, 157, 0.9);
+    min-height: 18px;
+}
+
+.dialog-hint {
+    font-size: 0.75rem;
+    color: rgba(228, 245, 255, 0.6);
+    line-height: 1.4;
 }
 
 .color-selector-section h4 {

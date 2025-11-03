@@ -16,6 +16,7 @@ class NetworkManager {
             onGameStart: null,
             onGameState: null,
             onPlayerInput: null,
+            onPlayerKicked: null,
             onError: null
         };
     }
@@ -136,6 +137,14 @@ class NetworkManager {
                 this.callbacks.onError(error.message);
             }
         });
+
+        this.socket.on('kicked', (info) => {
+            console.log('Kicked from room:', info);
+            this.currentRoom = null;
+            if (this.callbacks.onPlayerKicked) {
+                this.callbacks.onPlayerKicked(info);
+            }
+        });
     }
 
     disconnect() {
@@ -147,20 +156,32 @@ class NetworkManager {
         }
     }
 
-    createRoom(roomName) {
+    createRoom(roomName, options = {}) {
         if (!this.socket || !this.connected) {
             console.error('Not connected to server');
             return;
         }
-        this.socket.emit('create-room', { name: roomName });
+        const payload = {
+            name: roomName,
+            isPrivate: !!options.isPrivate,
+            accessCode: options.isPrivate && options.accessCode
+                ? String(options.accessCode).trim().toUpperCase()
+                : null
+        };
+        this.socket.emit('create-room', payload);
     }
 
-    joinRoom(roomId) {
+    joinRoom(roomId, accessCode = null) {
         if (!this.socket || !this.connected) {
             console.error('Not connected to server');
             return;
         }
-        this.socket.emit('join-room', roomId);
+        if (typeof roomId === 'object' && roomId !== null) {
+            this.socket.emit('join-room', roomId);
+            return;
+        }
+
+        this.socket.emit('join-room', { roomId, accessCode });
     }
 
     leaveRoom() {
@@ -169,6 +190,14 @@ class NetworkManager {
             return;
         }
         this.socket.emit('leave-room');
+    }
+
+    kickPlayer(playerId) {
+        if (!this.socket || !this.connected) {
+            console.error('Not connected to server');
+            return;
+        }
+        this.socket.emit('kick-player', playerId);
     }
 
     changeColor(color) {
@@ -221,6 +250,7 @@ class NetworkManager {
             'gameStart': 'onGameStart',
             'gameState': 'onGameState',
             'playerInput': 'onPlayerInput',
+            'kicked': 'onPlayerKicked',
             'error': 'onError'
         };
         

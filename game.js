@@ -95,17 +95,39 @@ const TRANSLATIONS = {
         createRoomPlaceholder: "Name your room...",
         createRoomAction: "Create",
         createRoomHelp: "Pick a name and invite friends to join.",
+        roomVisibility: "Room visibility",
+        roomVisibilityHelp: "Choose whether your room is public or private and set an access code.",
+        publicRoom: "Public",
+        privateRoom: "Private",
+        publicRoomHint: "Listed in the lobby for everyone.",
+        privateRoomHint: "Only players with the code can join.",
+        accessCodeLabel: "Access code",
+        accessCodePlaceholder: "4-8 letters or numbers",
+        accessCodeRequired: "Enter a code for private rooms.",
+        confirmCreateRoom: "Create room",
+        enterRoomCodeTitle: "Enter access code",
+        enterRoomCodeHelp: "This room is private. Enter the code to join.",
+        roomCodePlaceholder: "Enter code...",
+        roomCodeRequired: "Enter the room code.",
+        invalidAccessCode: "Incorrect access code.",
         roomNameRequired: "Enter a room name first.",
         playersInRoom: "Players in Room",
         yourColor: "Your Color",
         ready: "Ready",
+        notReady: "Not Ready",
         waitingForPlayers: "Waiting for players...",
         playersReadyLabel: "players ready",
         startingGame: "Starting game...",
         playersLabel: "players",
         roomOpen: "Open",
         roomInGame: "In game",
+        roomCodeLabel: "Code",
         leaveRoom: "Leave Room",
+        hostLabel: "Host",
+        kickPlayer: "Remove",
+        youWereKicked: "Removed from room",
+        youWereKickedMsg: "The host removed you from the room.",
+        joinRoomAction: "Join room",
         backToMenu: "Back to Menu",
         
         // Co-op
@@ -218,17 +240,39 @@ const TRANSLATIONS = {
         createRoomPlaceholder: "Введите название комнаты...",
         createRoomAction: "Создать",
         createRoomHelp: "Придумайте название и пригласите друзей.",
+        roomVisibility: "Параметры комнаты",
+        roomVisibilityHelp: "Выберите, будет ли комната публичной или приватной, и задайте код доступа.",
+        publicRoom: "Публичная",
+        privateRoom: "Приватная",
+        publicRoomHint: "Комната отображается в списке для всех.",
+        privateRoomHint: "Войти можно только по коду.",
+        accessCodeLabel: "Код доступа",
+        accessCodePlaceholder: "4-8 символов",
+        accessCodeRequired: "Введите код для приватной комнаты.",
+        confirmCreateRoom: "Создать комнату",
+        enterRoomCodeTitle: "Введите код доступа",
+        enterRoomCodeHelp: "Комната приватная. Введите код, чтобы присоединиться.",
+        roomCodePlaceholder: "Введите код...",
+        roomCodeRequired: "Введите код комнаты.",
+        invalidAccessCode: "Неверный код доступа.",
         roomNameRequired: "Введите название комнаты.",
         playersInRoom: "Игроки в комнате",
         yourColor: "Ваш цвет",
         ready: "Готов",
+        notReady: "Не готов",
         waitingForPlayers: "Ожидание игроков...",
         playersReadyLabel: "игроков готовы",
         startingGame: "Запуск игры...",
         playersLabel: "игроков",
         roomOpen: "Свободна",
         roomInGame: "В игре",
+        roomCodeLabel: "Код",
         leaveRoom: "Покинуть комнату",
+        hostLabel: "Хост",
+        kickPlayer: "Удалить",
+        youWereKicked: "Вас удалили из комнаты",
+        youWereKickedMsg: "Хост удалил вас из комнаты.",
+        joinRoomAction: "Войти в комнату",
         backToMenu: "Назад в меню",
         
         // Co-op
@@ -948,7 +992,9 @@ class UIManager {
         this.clearFeed = document.getElementById('clear-feed');
         this.pendingScaleFrame = null;
         this.lastComboChain = 0;
-        
+        this.roomDialogOverlay = null;
+        this.roomDialogKeyHandler = null;
+
         // Set combo help tooltip
         if (this.comboIndicator) {
             this.updateComboTooltip();
@@ -2405,8 +2451,17 @@ class UIManager {
                 userMessage = t('socketIoNotAvailable');
             } else if (message.includes('Connection failed') || message.includes('failed')) {
                 userMessage = t('serverUnavailable');
+            } else if (message.includes('Invalid access code')) {
+                userMessage = t('invalidAccessCode');
+            } else if (message.includes('Access code required')) {
+                userMessage = t('accessCodeRequired');
             }
             this.showStyledMessage(t('networkError'), userMessage, 'error');
+        });
+
+        networkManager.on('kicked', () => {
+            this.showStyledMessage(t('youWereKicked'), t('youWereKickedMsg'), 'warning');
+            this.hideRoomView();
         });
 
         // Connect to server
@@ -2452,6 +2507,12 @@ class UIManager {
                 roomButton.type = 'button';
                 roomButton.className = 'room-item';
                 roomButton.setAttribute('role', 'listitem');
+                const statusKey = room.gameStarted ? 'roomInGame' : 'roomOpen';
+                const statusClass = room.gameStarted ? 'room-status-label in-game' : 'room-status-label';
+                const privacyClass = room.isPrivate ? 'room-privacy-tag private' : 'room-privacy-tag';
+                const privacyKey = room.isPrivate ? 'privateRoom' : 'publicRoom';
+                const icon = room.isPrivate ? '🔒' : '→';
+
                 roomButton.innerHTML = `
                     <div class="room-info">
                         <h4>${room.name}</h4>
@@ -2461,11 +2522,20 @@ class UIManager {
                         </p>
                     </div>
                     <div class="room-meta">
-                        <span class="room-status-label" data-i18n="${room.gameStarted ? 'roomInGame' : 'roomOpen'}">${t(room.gameStarted ? 'roomInGame' : 'roomOpen')}</span>
-                        <span aria-hidden="true" class="room-meta-icon">→</span>
+                        <span class="${privacyClass}" data-i18n="${privacyKey}">${t(privacyKey)}</span>
+                        <span class="${statusClass}" data-i18n="${statusKey}">${t(statusKey)}</span>
+                        <span aria-hidden="true" class="room-meta-icon">${icon}</span>
                     </div>
                 `;
-                roomButton.addEventListener('click', () => this.joinRoom(room.id));
+
+                roomButton.addEventListener('click', () => {
+                    if (room.isPrivate) {
+                        this.promptForRoomCode(room);
+                    } else {
+                        this.joinRoom(room.id);
+                    }
+                });
+
                 container.appendChild(roomButton);
             });
         }
@@ -2491,12 +2561,277 @@ class UIManager {
             return;
         }
 
-        networkManager.createRoom(rawName);
-        input.value = '';
+        this.openRoomPrivacyDialog(rawName, () => {
+            input.value = '';
+        });
     }
 
-    joinRoom(roomId) {
-        networkManager.joinRoom(roomId);
+    joinRoom(roomId, accessCode = null) {
+        networkManager.joinRoom(roomId, accessCode);
+    }
+
+    openRoomPrivacyDialog(roomName, onSuccess) {
+        this.showRoomDialog({
+            title: t('roomVisibility'),
+            description: t('roomVisibilityHelp'),
+            confirmLabel: t('confirmCreateRoom'),
+            build: (body) => {
+                const visibilityField = document.createElement('div');
+                visibilityField.className = 'dialog-field';
+
+                const visibilityLabel = document.createElement('label');
+                visibilityLabel.textContent = t('roomVisibility');
+                visibilityField.appendChild(visibilityLabel);
+
+                const select = document.createElement('select');
+                const publicOption = document.createElement('option');
+                publicOption.value = 'public';
+                publicOption.textContent = t('publicRoom');
+                select.appendChild(publicOption);
+
+                const privateOption = document.createElement('option');
+                privateOption.value = 'private';
+                privateOption.textContent = t('privateRoom');
+                select.appendChild(privateOption);
+
+                visibilityField.appendChild(select);
+                body.appendChild(visibilityField);
+
+                const hint = document.createElement('p');
+                hint.className = 'dialog-hint';
+                hint.textContent = t('publicRoomHint');
+                body.appendChild(hint);
+
+                const codeField = document.createElement('div');
+                codeField.className = 'dialog-field';
+                const codeLabel = document.createElement('label');
+                codeLabel.textContent = t('accessCodeLabel');
+                codeField.appendChild(codeLabel);
+
+                const codeInput = document.createElement('input');
+                codeInput.type = 'text';
+                codeInput.placeholder = t('accessCodePlaceholder');
+                codeInput.maxLength = 8;
+                codeField.appendChild(codeInput);
+
+                codeField.style.display = 'none';
+                body.appendChild(codeField);
+
+                select.addEventListener('change', () => {
+                    if (select.value === 'private') {
+                        codeField.style.display = 'flex';
+                        hint.textContent = t('privateRoomHint');
+                        setTimeout(() => codeInput.focus(), 50);
+                    } else {
+                        codeField.style.display = 'none';
+                        hint.textContent = t('publicRoomHint');
+                    }
+                });
+
+                return { selectEl: select, codeInput, hintEl: hint, initialFocus: select };
+            },
+            onConfirm: ({ selectEl, codeInput, errorEl }) => {
+                const isPrivate = selectEl.value === 'private';
+                let code = codeInput.value.trim().toUpperCase();
+                code = code.replace(/[^A-Z0-9]/g, '');
+
+                if (code !== codeInput.value) {
+                    codeInput.value = code;
+                }
+
+                if (isPrivate) {
+                    if (code.length < 4) {
+                        errorEl.textContent = t('accessCodeRequired');
+                        codeInput.focus();
+                        return false;
+                    }
+                    if (code.length > 8) {
+                        code = code.slice(0, 8);
+                        codeInput.value = code;
+                    }
+                } else {
+                    code = null;
+                }
+
+                networkManager.createRoom(roomName, { isPrivate, accessCode: code });
+                if (typeof onSuccess === 'function') {
+                    onSuccess();
+                }
+                return true;
+            }
+        });
+    }
+
+    promptForRoomCode(room) {
+        this.showRoomDialog({
+            title: t('enterRoomCodeTitle'),
+            description: t('enterRoomCodeHelp'),
+            confirmLabel: t('joinRoomAction'),
+            build: (body) => {
+                const codeField = document.createElement('div');
+                codeField.className = 'dialog-field';
+
+                const codeLabel = document.createElement('label');
+                codeLabel.textContent = t('accessCodeLabel');
+                codeField.appendChild(codeLabel);
+
+                const codeInput = document.createElement('input');
+                codeInput.type = 'text';
+                codeInput.placeholder = t('roomCodePlaceholder');
+                codeInput.maxLength = 8;
+                codeField.appendChild(codeInput);
+
+                body.appendChild(codeField);
+
+                return { codeInput, initialFocus: codeInput };
+            },
+            onConfirm: ({ codeInput, errorEl }) => {
+                let code = codeInput.value.trim().toUpperCase();
+                code = code.replace(/[^A-Z0-9]/g, '');
+
+                if (code !== codeInput.value) {
+                    codeInput.value = code;
+                }
+
+                if (!code) {
+                    errorEl.textContent = t('roomCodeRequired');
+                    codeInput.focus();
+                    return false;
+                }
+
+                this.joinRoom(room.id, code);
+                return true;
+            }
+        });
+    }
+
+    showRoomDialog({ title, description, confirmLabel, cancelLabel = t('cancel'), build, onConfirm, onCancel }) {
+        if (!this.roomDialogOverlay) {
+            this.roomDialogOverlay = document.createElement('div');
+            this.roomDialogOverlay.id = 'room-dialog-overlay';
+            this.roomDialogOverlay.className = 'room-dialog-overlay';
+            document.body.appendChild(this.roomDialogOverlay);
+        }
+
+        const overlay = this.roomDialogOverlay;
+        overlay.innerHTML = '';
+        overlay.classList.add('active');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        const dialog = document.createElement('div');
+        dialog.className = 'room-dialog';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        overlay.appendChild(dialog);
+
+        if (title) {
+            const titleEl = document.createElement('h3');
+            titleEl.textContent = title;
+            dialog.appendChild(titleEl);
+        }
+
+        if (description) {
+            const descriptionEl = document.createElement('p');
+            descriptionEl.textContent = description;
+            dialog.appendChild(descriptionEl);
+        }
+
+        const body = document.createElement('div');
+        body.className = 'room-dialog-body';
+        dialog.appendChild(body);
+
+        const context = (typeof build === 'function') ? (build(body) || {}) : {};
+
+        const errorEl = document.createElement('div');
+        errorEl.className = 'dialog-error';
+        dialog.appendChild(errorEl);
+
+        const actions = document.createElement('div');
+        actions.className = 'dialog-actions';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn btn-secondary';
+        cancelBtn.textContent = cancelLabel || t('cancel');
+        actions.appendChild(cancelBtn);
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'btn btn-primary';
+        confirmBtn.textContent = confirmLabel || t('confirmCreateRoom');
+        actions.appendChild(confirmBtn);
+
+        dialog.appendChild(actions);
+
+        const cancelHandler = () => {
+            this.closeRoomDialog();
+            if (typeof onCancel === 'function') {
+                onCancel();
+            }
+        };
+
+        overlay.onclick = (event) => {
+            if (event.target === overlay) {
+                cancelHandler();
+            }
+        };
+
+        cancelBtn.addEventListener('click', cancelHandler);
+
+        confirmBtn.addEventListener('click', () => {
+            errorEl.textContent = '';
+            if (typeof onConfirm === 'function') {
+                const result = onConfirm({ ...context, errorEl });
+                if (result === false) {
+                    return;
+                }
+            }
+            this.closeRoomDialog();
+        });
+
+        if (this.roomDialogKeyHandler) {
+            document.removeEventListener('keydown', this.roomDialogKeyHandler);
+        }
+
+        this.roomDialogKeyHandler = (event) => {
+            if (event.key === 'Escape') {
+                cancelHandler();
+            } else if (event.key === 'Enter' && !(event.target instanceof HTMLTextAreaElement)) {
+                event.preventDefault();
+                confirmBtn.click();
+            }
+        };
+
+        document.addEventListener('keydown', this.roomDialogKeyHandler);
+
+        setTimeout(() => {
+            if (context && context.initialFocus && typeof context.initialFocus.focus === 'function') {
+                context.initialFocus.focus();
+            } else {
+                const focusable = dialog.querySelector('input, select, button, textarea');
+                if (focusable && typeof focusable.focus === 'function') {
+                    focusable.focus();
+                } else {
+                    confirmBtn.focus();
+                }
+            }
+        }, 50);
+
+        return { overlay, confirmBtn };
+    }
+
+    closeRoomDialog() {
+        if (this.roomDialogOverlay) {
+            this.roomDialogOverlay.classList.remove('active');
+            this.roomDialogOverlay.setAttribute('aria-hidden', 'true');
+            this.roomDialogOverlay.innerHTML = '';
+            this.roomDialogOverlay.onclick = null;
+        }
+
+        if (this.roomDialogKeyHandler) {
+            document.removeEventListener('keydown', this.roomDialogKeyHandler);
+            this.roomDialogKeyHandler = null;
+        }
     }
 
     leaveRoom() {
@@ -2541,9 +2876,33 @@ class UIManager {
         const statusEl = document.getElementById('room-status');
         const readyBtn = document.getElementById('ready-btn');
         const socketId = networkManager.socket ? networkManager.socket.id : null;
+        const privacyDetailsEl = document.getElementById('room-privacy-details');
+        const isHost = socketId && room.hostId === socketId;
 
         if (roomNameEl) {
             roomNameEl.textContent = room.name;
+        }
+
+        if (privacyDetailsEl) {
+            privacyDetailsEl.innerHTML = '';
+
+            const privacyTag = document.createElement('span');
+            privacyTag.className = 'room-privacy-tag' + (room.isPrivate ? ' private' : '');
+            privacyTag.setAttribute('data-i18n', room.isPrivate ? 'privateRoom' : 'publicRoom');
+            privacyTag.textContent = t(room.isPrivate ? 'privateRoom' : 'publicRoom');
+            privacyDetailsEl.appendChild(privacyTag);
+
+            if (room.isPrivate && room.accessCode) {
+                const codeSpan = document.createElement('span');
+                codeSpan.className = 'room-privacy-code';
+                const codeLabel = document.createElement('span');
+                codeLabel.textContent = `${t('roomCodeLabel')}: `;
+                const codeValue = document.createElement('strong');
+                codeValue.textContent = room.accessCode;
+                codeSpan.appendChild(codeLabel);
+                codeSpan.appendChild(codeValue);
+                privacyDetailsEl.appendChild(codeSpan);
+            }
         }
 
         // Update players list
@@ -2552,11 +2911,54 @@ class UIManager {
             room.players.forEach(player => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'room-player-item';
-                playerDiv.innerHTML = `
-                    <div class="room-player-color" style="background: ${player.color};"></div>
-                    <div class="room-player-name">${player.name}</div>
-                    <div class="room-player-status">${player.ready ? '✓ Ready' : 'Not Ready'}</div>
-                `;
+
+                const mainSection = document.createElement('div');
+                mainSection.className = 'room-player-main';
+
+                const colorSwatch = document.createElement('div');
+                colorSwatch.className = 'room-player-color';
+                colorSwatch.style.background = player.color;
+                mainSection.appendChild(colorSwatch);
+
+                const infoSection = document.createElement('div');
+                infoSection.className = 'room-player-info';
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'room-player-name';
+                nameEl.textContent = player.name;
+                infoSection.appendChild(nameEl);
+
+                if (player.id === room.hostId) {
+                    const roleEl = document.createElement('div');
+                    roleEl.className = 'room-player-role';
+                    roleEl.textContent = t('hostLabel');
+                    infoSection.appendChild(roleEl);
+                }
+
+                mainSection.appendChild(infoSection);
+                playerDiv.appendChild(mainSection);
+
+                const controlsSection = document.createElement('div');
+                controlsSection.className = 'room-player-controls';
+
+                const statusBadge = document.createElement('span');
+                statusBadge.className = 'room-player-status ' + (player.ready ? 'ready' : 'not-ready');
+                statusBadge.textContent = player.ready ? t('ready') : t('notReady');
+                controlsSection.appendChild(statusBadge);
+
+                if (isHost && player.id !== socketId) {
+                    const kickBtn = document.createElement('button');
+                    kickBtn.type = 'button';
+                    kickBtn.className = 'room-player-kick';
+                    kickBtn.textContent = t('kickPlayer');
+                    kickBtn.setAttribute('aria-label', `${t('kickPlayer')} ${player.name}`);
+                    kickBtn.addEventListener('click', () => {
+                        networkManager.kickPlayer(player.id);
+                    });
+                    controlsSection.appendChild(kickBtn);
+                }
+
+                playerDiv.appendChild(controlsSection);
                 playersListEl.appendChild(playerDiv);
             });
         }
