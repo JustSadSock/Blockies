@@ -341,6 +341,8 @@ const BLOCK_SIZE = 25;
 const BASE_BOARD_WIDTH = 10;
 const BOARD_HEIGHT = 20;
 const ADDITIONAL_COLUMNS_PER_PLAYER = 4;
+const WALL_CELL = -1;
+const SPAWN_BARRIER_HEIGHT = 4;
 const PREVIEW_SIZE = 4;
 
 const BASE_LINE_SCORE = 100;
@@ -588,6 +590,51 @@ function createEmptyBoard(width = getBoardWidth(), height = BOARD_HEIGHT) {
     return Array.from({ length: height }, () => Array(width).fill(0));
 }
 
+function computeSpawnLayout(numPlayers, boardWidth) {
+    const count = Math.max(1, numPlayers || 1);
+    const width = Math.max(BASE_BOARD_WIDTH, boardWidth || BASE_BOARD_WIDTH);
+    const section = width / count;
+    const anchors = [];
+    const barriers = [];
+
+    for (let i = 0; i < count; i++) {
+        anchors.push((i + 0.5) * section);
+        if (i < count - 1) {
+            const boundary = Math.round(section * (i + 1));
+            if (boundary > 0 && boundary < width && !barriers.includes(boundary)) {
+                barriers.push(boundary);
+            }
+        }
+    }
+
+    return { anchors, barriers };
+}
+
+function applySpawnBarriers() {
+    if (!Array.isArray(gameState.spawnBarriers) || !gameState.spawnBarriers.length) {
+        return;
+    }
+
+    const boardWidth = getBoardWidth();
+    const height = Math.min(SPAWN_BARRIER_HEIGHT, BOARD_HEIGHT);
+
+    for (const column of gameState.spawnBarriers) {
+        if (column <= 0 || column >= boardWidth) continue;
+
+        for (let y = 0; y < height; y++) {
+            if (!gameState.board[y]) continue;
+            gameState.board[y][column] = WALL_CELL;
+        }
+    }
+}
+
+function setSpawnBarriers(columns = []) {
+    const boardWidth = getBoardWidth();
+    const unique = Array.from(new Set(columns.filter(col => col > 0 && col < boardWidth)));
+    gameState.spawnBarriers = unique;
+    applySpawnBarriers();
+}
+
 // Game State
 let gameState = {
     players: [],
@@ -618,7 +665,8 @@ let gameState = {
         connected: [],
         assignments: {}, // gamepadIndex -> playerIndex
         buttonStates: new Map() // gamepadIndex -> button states
-    }
+    },
+    spawnBarriers: []
 };
 
 // Gamepad configuration
@@ -985,7 +1033,9 @@ class Player {
 
         const boardWidth = getBoardWidth();
         for (let y = BOARD_HEIGHT - 1; y >= 0; y--) {
-            if (gameState.board[y].every(cell => cell !== 0)) {
+            const row = gameState.board[y];
+            const hasBarrier = row.some(cell => cell === WALL_CELL);
+            if (!hasBarrier && row.every(cell => cell !== 0)) {
                 gameState.board.splice(y, 1);
                 gameState.board.unshift(Array(boardWidth).fill(0));
                 linesCleared++;
@@ -1004,6 +1054,8 @@ class Player {
 
         // Play line clear sound
         soundManager.lineClear(linesCleared);
+
+        applySpawnBarriers();
 
         const comboStep = gameState.sharedStats.comboChain || 0;
         const comboMultiplier = 1 + STREAK_BONUS_STEP * comboStep;
@@ -1226,6 +1278,21 @@ class UIManager {
         if (this.pendingLocalInputs.length > 40) {
             this.pendingLocalInputs.shift();
         }
+    }
+
+    hasPendingLocalInputs() {
+        if (!Array.isArray(this.pendingLocalInputs) || this.pendingLocalInputs.length === 0) {
+            return false;
+        }
+
+        const threshold = this.lastAckedSequence || 0;
+        return this.pendingLocalInputs.some(entry => {
+            if (!entry) return false;
+            if (entry.sequence === null || entry.sequence === undefined) {
+                return true;
+            }
+            return typeof entry.sequence === 'number' && entry.sequence > threshold;
+        });
     }
 
     handleInputAck(payload = {}) {
@@ -1687,6 +1754,9 @@ class UIManager {
 
         const seedUsed = initializePieceSystem(options.pieceSeed, options.pieceSequence);
 
+        const layout = computeSpawnLayout(numPlayers, gameState.boardWidth);
+        setSpawnBarriers(layout.barriers);
+
         const container = document.getElementById('game-container');
         container.innerHTML = '';
         
@@ -1727,7 +1797,9 @@ class UIManager {
         container.appendChild(boardWrapper);
 
         for (let i = 0; i < numPlayers; i++) {
-            const spawnAnchor = ((i + 1) / (numPlayers + 1)) * gameState.boardWidth;
+            const spawnAnchor = (Array.isArray(layout.anchors) && typeof layout.anchors[i] === 'number')
+                ? layout.anchors[i]
+                : ((i + 1) / (numPlayers + 1)) * gameState.boardWidth;
             const player = new Player(
                 i,
                 gameState.settings.colors[i],
@@ -1888,6 +1960,15 @@ class UIManager {
         gameState.players.forEach(player => {
             if (!player) return;
 
+            if (this.isOnlineMode && !this.isOnlineHost && player.id === this.localPlayerIndex) {
+                if (!player.renderPosition) {
+                    player.renderPosition = { x: player.position.x, y: player.position.y };
+                }
+                player.renderPosition.x = player.position.x;
+                player.renderPosition.y = player.position.y;
+                return;
+            }
+
             if (!player.renderPosition) {
                 player.renderPosition = { x: player.position.x, y: player.position.y };
             }
@@ -1934,10 +2015,19 @@ class UIManager {
         for (let y = 0; y < BOARD_HEIGHT; y++) {
             for (let x = 0; x < boardWidth; x++) {
                 const occupant = gameState.board[y][x];
-                if (occupant) {
+                if (occupant === WALL_CELL) {
+                    ctx.fillStyle = '#221a38';
+                    ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x * BLOCK_SIZE + 0.5, y * BLOCK_SIZE + 0.5, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                    continue;
+                }
+
+                if (occupant > 0) {
                     const player = gameState.players[occupant - 1];
                     const color = player ? player.color : '#333';
-                    
+
                     // Main block with gradient
                     const gradient = ctx.createLinearGradient(
                         x * BLOCK_SIZE, y * BLOCK_SIZE,
@@ -1951,7 +2041,7 @@ class UIManager {
                     // Highlight
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
                     ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 2, BLOCK_SIZE - 6, 3);
-                    
+
                     // Border
                     ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
                     ctx.lineWidth = 2;
@@ -3699,6 +3789,7 @@ class UIManager {
 
         if (Array.isArray(data.board) && data.board.length) {
             gameState.board = data.board.map(row => Array.isArray(row) ? [...row] : []);
+            applySpawnBarriers();
         }
 
         if (Array.isArray(data.queue) && data.queue.length) {
@@ -3706,22 +3797,29 @@ class UIManager {
             ensurePieceQueue();
         }
 
+        const localHasPending = this.hasPendingLocalInputs();
+
         if (Array.isArray(data.players)) {
             data.players.forEach((snapshot, index) => {
                 const player = gameState.players[index];
                 if (!player) return;
 
+                const isLocalControlled = this.isOnlineMode && !this.isOnlineHost && index === this.localPlayerIndex;
+                const skipPositionSync = isLocalControlled && localHasPending;
+
                 if (snapshot.position) {
-                    player.position.x = typeof snapshot.position.x === 'number' ? snapshot.position.x : player.position.x;
-                    player.position.y = typeof snapshot.position.y === 'number' ? snapshot.position.y : player.position.y;
-                    if (!player.renderPosition) {
-                        player.renderPosition = { x: player.position.x, y: player.position.y };
-                    }
-                    if (Math.abs(player.renderPosition.x - player.position.x) > 3) {
-                        player.renderPosition.x = player.position.x;
-                    }
-                    if (Math.abs(player.renderPosition.y - player.position.y) > 4) {
-                        player.renderPosition.y = player.position.y;
+                    if (!skipPositionSync) {
+                        player.position.x = typeof snapshot.position.x === 'number' ? snapshot.position.x : player.position.x;
+                        player.position.y = typeof snapshot.position.y === 'number' ? snapshot.position.y : player.position.y;
+                        if (!player.renderPosition) {
+                            player.renderPosition = { x: player.position.x, y: player.position.y };
+                        }
+                        if (Math.abs(player.renderPosition.x - player.position.x) > 3) {
+                            player.renderPosition.x = player.position.x;
+                        }
+                        if (Math.abs(player.renderPosition.y - player.position.y) > 4) {
+                            player.renderPosition.y = player.position.y;
+                        }
                     }
                 }
 
@@ -3759,6 +3857,14 @@ class UIManager {
 
                 player.gameOver = !!snapshot.gameOver;
 
+                if (isLocalControlled) {
+                    if (!player.renderPosition) {
+                        player.renderPosition = { x: player.position.x, y: player.position.y };
+                    }
+                    player.renderPosition.x = player.position.x;
+                    player.renderPosition.y = player.position.y;
+                }
+
                 this.updatePlayerInfo(player);
                 this.drawNextPiece(player);
             });
@@ -3777,8 +3883,8 @@ class UIManager {
             gameState.isGameOver = data.isGameOver;
         }
 
-        this.drawBoard();
         this.reapplyPendingInputs();
+        this.drawBoard();
 
         if (this.awaitingReconnect) {
             this.awaitingReconnect = false;
