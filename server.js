@@ -321,6 +321,25 @@ io.on('connection', (socket) => {
     });
 });
 
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Stop the process using this port or set the PORT environment variable to a free port.`);
+
+        if (process.platform === 'win32') {
+            console.error(`On Windows, you can find the conflicting process with: netstat -ano | findstr :${PORT}`);
+            console.error('Then terminate it with: taskkill /PID <pid> /F');
+        } else {
+            console.error(`On macOS/Linux, find the process with: lsof -i :${PORT} or sudo netstat -tulpn | grep ${PORT}`);
+            console.error('Then terminate it with: kill -9 <pid>');
+        }
+
+        process.exit(1);
+    }
+
+    console.error('Server encountered an unexpected error:', err);
+    process.exit(1);
+});
+
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
