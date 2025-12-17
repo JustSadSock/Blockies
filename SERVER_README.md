@@ -60,9 +60,21 @@ cloudflared tunnel create irgri-tunnel
 cloudflared tunnel run irgri-tunnel
 ```
 
+6. If you see an error about a missing credentials file on Windows, set the explicit path before running the tunnel:
+```bat
+set "TUNNEL_CRED_FILE=C:\Users\SadSock\.cloudflared\dc4ed8c1-690f-449a-b5a9-085c1476fb57.json"
+cloudflared tunnel run irgri-tunnel
+```
+
 ### Environment Variables
 
 - `PORT` - Server port (default: 3000)
+
+### Troubleshooting
+
+- **Port 3000 is already in use**
+  - Windows: `netstat -ano | findstr :3000` to find the PID, then `taskkill /PID <pid> /F`.
+  - macOS/Linux: `lsof -i :3000` or `sudo netstat -tulpn | grep 3000` to find the PID, then `kill -9 <pid>`.
 
 ## Features
 

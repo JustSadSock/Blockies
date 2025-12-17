@@ -21,4 +21,7 @@ echo.
 echo Press Ctrl+C to stop the server
 echo.
 
+REM Explicitly set the credentials file path
+set "TUNNEL_CRED_FILE=C:\Users\SadSock\.cloudflared\dc4ed8c1-690f-449a-b5a9-085c1476fb57.json"
+
 cloudflared tunnel run irgri-tunnel
